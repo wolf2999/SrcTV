@@ -1,0 +1,20 @@
+/**
+ * Cloudflare Workers 部署配置（配合 @opennextjs/cloudflare）。
+ * main 指向 OpenNext 构建产物中的 worker 入口；
+ * assets 静态资源目录由 `npx @opennextjs/cloudflare build` 生成。
+ */
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "srctv",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-10-01",
+  // Next.js 服务端代码依赖 Node API（代理、SSRF 校验等），必须开启
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "observability": {
+    "enabled": true
+  }
+}
