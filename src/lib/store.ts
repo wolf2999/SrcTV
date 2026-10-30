@@ -35,6 +35,8 @@ export interface AppSettings {
   /** 用户是否在设置中主动选择过封面图加载方式；为 false 时部署者的 DEFAULT_IMAGE_MODE 默认值可生效 */
   imageProxyModeTouched: boolean;
   customImageProxy: string;
+  /** 首页豆瓣推荐的自定义标签（用户经「管理标签」添加，直接作为豆瓣接口的 tag 参数） */
+  doubanCustomTags: string[];
 }
 
 /** 一次订阅同步导入的数量（点播 / 直播），用于列表内展示同步结果 */
@@ -295,6 +297,10 @@ interface AppState extends AppSettings {
   /** 清除全部跳过片段（设置面板的「清除全部」入口） */
   clearAllSkipMarks: () => void;
   markEnvSubsSeen: (urls: string[]) => void;
+  /** 添加自定义豆瓣标签（去重，空白剔除） */
+  addDoubanTag: (tag: string) => void;
+  /** 删除自定义豆瓣标签 */
+  removeDoubanTag: (tag: string) => void;
   updateSettings: (patch: Partial<Omit<AppSettings, 'customAPIs' | 'selectedKeys'>>) => void;
 }
 
@@ -348,6 +354,7 @@ export const useAppStore = create<AppState>()(
       imageProxyMode: 'direct',
       imageProxyModeTouched: false,
       customImageProxy: '',
+      doubanCustomTags: [],
 
       addCustomApi: (api) => {
         const list = get().customAPIs;
@@ -867,6 +874,18 @@ export const useAppStore = create<AppState>()(
 
       clearAllSkipMarks: () => set({ skipMarks: {} }),
 
+      addDoubanTag: (tag) => {
+        const trimmed = tag.trim();
+        if (!trimmed) return;
+        const cur = get().doubanCustomTags;
+        if (cur.includes(trimmed)) return;
+        set({ doubanCustomTags: [...cur, trimmed] });
+      },
+
+      removeDoubanTag: (tag) => {
+        set({ doubanCustomTags: get().doubanCustomTags.filter((t) => t !== tag) });
+      },
+
       updateSettings: (patch) => {
         // 用户主动修改推荐数据源 / 封面图加载方式时打上「已选择」标记：此后部署者的
         // DEFAULT_RECOMMEND_SOURCE / DEFAULT_IMAGE_MODE 默认值不再覆盖该用户的选择
@@ -991,6 +1010,7 @@ export const useAppStore = create<AppState>()(
         imageProxyMode: s.imageProxyMode,
         imageProxyModeTouched: s.imageProxyModeTouched,
         customImageProxy: s.customImageProxy,
+        doubanCustomTags: s.doubanCustomTags,
       }),
       // 同步 storage 会在模块加载时立即 rehydrate（早于 React hydration），
       // 一旦首屏渲染依赖持久化状态就会与 SSR 输出不一致。

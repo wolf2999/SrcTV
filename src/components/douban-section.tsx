@@ -31,13 +31,20 @@ export function RecommendSection({ onPick }: { onPick: (title: string) => void }
 function DoubanView({ onPick }: { onPick: (title: string) => void }) {
   const [type, setType] = useState<'movie' | 'tv'>('movie');
   const [tag, setTag] = useState('热门');
+  // 「管理标签」面板开关
+  const [managing, setManaging] = useState(false);
+  const doubanCustomTags = useAppStore((s) => s.doubanCustomTags);
+  const addDoubanTag = useAppStore((s) => s.addDoubanTag);
+  const removeDoubanTag = useAppStore((s) => s.removeDoubanTag);
 
   const query = useQuery({
     queryKey: ['douban', type, tag],
     queryFn: ({ signal }) => api.douban(type, tag, 0, 50, signal),
   });
 
-  const tags = type === 'movie' ? MOVIE_TAGS : TV_TAGS;
+  // 内置标签 + 用户自定义标签（自定义追加在尾部，豆瓣接口接受任意 tag）
+  const builtInTags = type === 'movie' ? MOVIE_TAGS : TV_TAGS;
+  const tags = [...builtInTags, ...doubanCustomTags.filter((t) => !builtInTags.includes(t))];
   const items = query.data?.items ?? [];
 
   const switchType = (t: 'movie' | 'tv') => {
@@ -74,7 +81,18 @@ function DoubanView({ onPick }: { onPick: (title: string) => void }) {
             {t}
           </button>
         ))}
+        {/* 管理标签入口：打开自定义标签面板 */}
+        <button
+          className="px-2.5 py-1 rounded-full text-xs bg-chip text-muted hover:text-content hover:bg-hover transition-colors"
+          onClick={() => setManaging((v) => !v)}
+        >
+          + 管理标签
+        </button>
       </div>
+
+      {managing && (
+        <TagManager onAdd={addDoubanTag} onRemove={removeDoubanTag} tags={doubanCustomTags} onClose={() => setManaging(false)} />
+      )}
 
       {query.isError ? (
         <p className="text-center text-sm text-faint py-8">推荐内容加载失败，可稍后重试或在设置中关闭</p>
@@ -90,6 +108,80 @@ function DoubanView({ onPick }: { onPick: (title: string) => void }) {
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * 自定义标签管理面板：输入添加、点击 × 删除。
+ * 自定义标签会作为豆瓣接口的 tag 参数直接生效（豆瓣支持任意标签词）。
+ */
+function TagManager({
+  tags,
+  onAdd,
+  onRemove,
+  onClose,
+}: {
+  tags: string[];
+  onAdd: (tag: string) => void;
+  onRemove: (tag: string) => void;
+  onClose: () => void;
+}) {
+  const [input, setInput] = useState('');
+
+  const submit = () => {
+    if (!input.trim()) return;
+    onAdd(input);
+    setInput('');
+  };
+
+  return (
+    <div className="mb-4 rounded-lg bg-chip p-3">
+      <div className="flex items-center gap-2 mb-3">
+        <input
+          className="flex-1 min-w-0 rounded-md bg-hover px-3 py-1.5 text-sm text-content outline-none placeholder:text-faint"
+          placeholder="输入自定义标签，如：科幻 / 悬疑 / 西部片"
+          value={input}
+          maxLength={20}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') submit();
+          }}
+        />
+        <button
+          className="px-3 py-1.5 rounded-md text-sm bg-accent text-on-accent shrink-0"
+          onClick={submit}
+        >
+          添加
+        </button>
+        <button
+          className="px-3 py-1.5 rounded-md text-sm text-muted hover:text-content shrink-0"
+          onClick={onClose}
+        >
+          关闭
+        </button>
+      </div>
+      {tags.length === 0 ? (
+        <p className="text-xs text-faint">还没有自定义标签，添加后会出现在上方标签栏末尾</p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {tags.map((t) => (
+            <span
+              key={t}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs bg-hover text-content"
+            >
+              {t}
+              <button
+                aria-label={`删除标签 ${t}`}
+                className="text-faint hover:text-accent transition-colors"
+                onClick={() => onRemove(t)}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
