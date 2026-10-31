@@ -6,6 +6,7 @@ import { ToastProvider } from './toast';
 import { AuthProvider } from './auth';
 import { ThemeProvider } from './theme';
 import { GlobalDownloadManager } from './download-manager';
+import { I18nProvider } from '@/lib/i18n';
 import { useAppStore, hydrateLiveProbeResults } from '@/lib/store';
 import { api, STATUS_QUERY_KEY } from '@/lib/client-api';
 import { applyEnvPresets } from '@/lib/subscription-sync';
@@ -45,14 +46,18 @@ export function Providers({ children }: { children: ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
-        <ToastProvider>
-          {/* 全站常驻：下载事件监听（enqueueDownload）依赖它存在——
-              挂在 Header 里会让 /watch 等不渲染 Header 的页面派发的事件凭空丢失 */}
-          <GlobalDownloadManager />
-          <AuthProvider>{children}</AuthProvider>
-        </ToastProvider>
-      </ThemeProvider>
+      {/* i18n Provider 用同步 localStorage 初始化 locale（独立于 zustand），
+          保证首帧即拿到正确语言，无闪烁 */}
+      <I18nProvider>
+        <ThemeProvider>
+          <ToastProvider>
+            {/* 全站常驻：下载事件监听（enqueueDownload）依赖它存在——
+                挂在 Header 里会让 /watch 等不渲染 Header 的页面派发的事件凭空丢失 */}
+            <GlobalDownloadManager />
+            <AuthProvider>{children}</AuthProvider>
+          </ToastProvider>
+        </ThemeProvider>
+      </I18nProvider>
     </QueryClientProvider>
   );
 }

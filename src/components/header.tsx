@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { ThemeToggle } from './theme';
 import { SourceManagerDrawer } from './source-manager';
@@ -9,12 +9,14 @@ import { HistoryPanel } from './history-panel';
 import { requestShowDownloadManager } from './download-manager';
 import { Icon } from './icon';
 import { SearchHistoryDropdown, useSearchHistory } from './search-history';
+import { LOCALE_META, useI18n, type Locale } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
-/** 顶部导航：Logo、搜索框（首页外）、历史、设置 */
+/** 顶部导航：Logo、搜索框（首页外）、语言切换、历史、设置 */
 export function Header({ showSearch = false }: { showSearch?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { t } = useI18n();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -60,8 +62,8 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
                     searchHistory.visible &&
                       'rounded-b-none border-accent border-b-line bg-surface-raised focus-visible:ring-0'
                   )}
-                  aria-label="搜索影片"
-                  placeholder="搜索影片..."
+                  aria-label={t('搜索影片')}
+                  placeholder={t('搜索影片...')}
                   value={query}
                   maxLength={100}
                   onChange={(e) => {
@@ -98,19 +100,20 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
 
           <nav className="flex items-center gap-1 ml-auto">
             <HeaderLink href="/live" active={pathname === '/live'}>
-              直播
+              {t('直播')}
             </HeaderLink>
             <HeaderLink href="/about" active={pathname === '/about'}>
-              关于
+              {t('关于')}
             </HeaderLink>
+            <LanguageSwitcher />
             <ThemeToggle />
-            <IconButton label="观看历史" onClick={() => setHistoryOpen(true)}>
+            <IconButton label={t('观看历史')} onClick={() => setHistoryOpen(true)}>
               <Icon name="clock" />
             </IconButton>
-            <IconButton label="下载管理" onClick={requestShowDownloadManager}>
+            <IconButton label={t('下载管理')} onClick={requestShowDownloadManager}>
               <Icon name="download" />
             </IconButton>
-            <IconButton label="设置" onClick={() => setSettingsOpen(true)}>
+            <IconButton label={t('设置')} onClick={() => setSettingsOpen(true)}>
               <Icon name="gear" />
             </IconButton>
           </nav>
@@ -120,6 +123,67 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
       <SourceManagerDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <HistoryPanel open={historyOpen} onClose={() => setHistoryOpen(false)} />
     </>
+  );
+}
+
+/**
+ * 语言切换下拉：简体 / 繁體 / English。
+ * 选中态打点；点击面板外部关闭；切换立即生效并持久化（I18nProvider 负责）。
+ */
+function LanguageSwitcher() {
+  const { locale, setLocale, t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // 点击面板外关闭（mousedown 提前于 click，避免点击选项时先触发外点关闭的竞态）
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+
+  const pick = (l: Locale) => {
+    setLocale(l);
+    setOpen(false);
+  };
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        className="p-2 rounded-md text-muted hover:text-content hover:bg-hover transition-colors"
+        title={t('语言')}
+        aria-label={t('语言')}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Icon name="globe" />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-full mt-1 min-w-[9rem] rounded-lg border border-line bg-surface-raised shadow-lg py-1 z-50"
+        >
+          {LOCALE_META.map((m) => (
+            <button
+              key={m.value}
+              role="menuitemradio"
+              aria-checked={locale === m.value}
+              className={cn(
+                'w-full text-left px-3 py-1.5 text-sm transition-colors flex items-center justify-between',
+                locale === m.value ? 'text-accent bg-hover' : 'text-content hover:bg-hover'
+              )}
+              onClick={() => pick(m.value)}
+            >
+              {m.label}
+              {locale === m.value && <Icon name="check" className="w-4 h-4" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

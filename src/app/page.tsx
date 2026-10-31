@@ -9,6 +9,7 @@ import { DetailModal } from '@/components/detail-modal';
 import { AggregatedCard, aggregateResults } from '@/components/video-card';
 import { useAppStore, resolveSource, isInDisabledSubscription, isSourceDisabled } from '@/lib/store';
 import { api } from '@/lib/client-api';
+import { useI18n } from '@/lib/i18n';
 import type { SearchResultItem, SourceSearchOutcome } from '@/lib/types';
 import { SearchHistoryDropdown, useSearchHistory } from '@/components/search-history';
 import { cn, formatDisableTtl, validateSourceUrl } from '@/lib/utils';
@@ -36,6 +37,7 @@ function HomeContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { toast } = useToast();
+  const { t } = useI18n();
   const urlQuery = searchParams.get('s') || '';
   // 精确订阅所需字段（对齐 live 页的做法）：搜索流式期间逐源写健康度、
   // 打开设置抽屉/历史面板等无关 store 变化，都不应触发首页整树重渲染
@@ -103,8 +105,8 @@ function HomeContent() {
           for (const ev of useAppStore.getState().recordSourceHealth([outcome])) {
             toast(
               ev.permanent
-                ? `「${sourceName(ev.key)}」多次失败，已停止参与搜索，可在设置中恢复`
-                : `「${sourceName(ev.key)}」连续超时/失败，已停用 ${formatDisableTtl(ev.ttlMs ?? 0)}`,
+                ? `「${sourceName(ev.key)}」${t('多次失败，已停止参与搜索，可在设置中恢复')}`
+                : `「${sourceName(ev.key)}」${t('连续超时/失败，已停用')} ${formatDisableTtl(ev.ttlMs ?? 0)}`,
               'warning'
             );
           }
@@ -122,12 +124,12 @@ function HomeContent() {
   const runSearch = (q: string) => {
     const query = q.trim().slice(0, 100);
     if (!query) {
-      toast('请输入搜索内容', 'info');
+      toast(t('请输入搜索内容'), 'info');
       inputRef.current?.focus();
       return;
     }
     if (selectedSources.length === 0) {
-      toast('请先在设置中添加并勾选点播源', 'warning');
+      toast(t('请先在设置中添加并勾选点播源'), 'warning');
       return;
     }
     router.push(`/?s=${encodeURIComponent(query)}`, { scroll: false });
@@ -216,7 +218,7 @@ function HomeContent() {
                 <input
                   ref={inputRef}
                   className="flex-1 min-w-0 pr-2 bg-transparent text-sm text-content placeholder:text-faint focus:outline-none"
-                  placeholder="输入影片名称..."
+                  placeholder={t('输入影片名称...')}
                   value={input}
                   maxLength={100}
                   onChange={(e) => {
@@ -226,7 +228,7 @@ function HomeContent() {
                   onFocus={searchHistory.onFocus}
                   onKeyDown={(e) => searchHistory.onKeyDown(e, pickHistory)}
                   role="combobox"
-                  aria-label="搜索影片"
+                  aria-label={t('搜索影片')}
                   aria-expanded={searchHistory.visible}
                   aria-controls="home-search-history"
                   aria-autocomplete="list"
@@ -245,7 +247,7 @@ function HomeContent() {
                       searchHistory.resetActive();
                       inputRef.current?.focus();
                     }}
-                    aria-label="清空"
+                    aria-label={t('清空')}
                   >
                     <Icon name="close" className="w-4 h-4" />
                   </button>
@@ -261,7 +263,7 @@ function HomeContent() {
                   )}
                 >
                   <Icon name="search" className="w-4 h-4" />
-                  搜索
+                  {t('搜索')}
                 </button>
               </div>
             </form>
@@ -285,15 +287,16 @@ function HomeContent() {
           <section aria-label="搜索结果" className="mb-10">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm text-muted">
-                “<span className="text-content">{urlQuery}</span>” 的搜索结果
+                “<span className="text-content">{urlQuery}</span>”{t('的搜索结果')}
                 {isSearching ? (
                   <span className="text-faint">
-                    （已就绪 {streamedOutcomes.length}/{selectedSources.length} 个源…）
+                    （{t('已就绪')} {streamedOutcomes.length}/{selectedSources.length} {t('个源…')}）
                   </span>
                 ) : (
                   searchQuery.data && (
                     <span className="text-faint">
-                      （{groups.length} 部影片 · {list.length} 条结果{failures.length > 0 && `，${failures.length} 个源失败`}）
+                      （{groups.length} {t('部影片')} · {list.length} {t('条结果')}
+                      {failures.length > 0 && `，${failures.length} ${t('个源失败')}`}）
                     </span>
                   )
                 )}
@@ -302,11 +305,11 @@ function HomeContent() {
 
             {failures.length > 0 && (
               <div className="mb-3 text-xs bg-chip rounded-lg px-3 py-2 flex flex-wrap gap-x-3 gap-y-1">
-                <span className="text-faint">{isSearching ? '以下源暂时无响应：' : '部分点播源请求失败：'}</span>
+                <span className="text-faint">{isSearching ? t('以下源暂时无响应：') : t('部分点播源请求失败：')}</span>
                 {failures.map((f) => (
                   <span key={f.sourceKey} className={f.timedOut ? 'text-warning' : 'text-faint'}>
                     {f.timedOut ? '⏱' : '✗'} {sourceName(f.sourceKey)}
-                    {f.timedOut ? ' 超时' : ''}
+                    {f.timedOut ? ` ${t('超时')}` : ''}
                   </span>
                 ))}
               </div>
@@ -314,14 +317,16 @@ function HomeContent() {
 
             {disabledSources.length > 0 && (
               <div className="mb-3 text-xs text-faint bg-chip rounded-lg px-3 py-2">
-                {disabledSources.length} 个源因连续超时/失败已暂停参与搜索（临时停用的到期自动恢复，
-                长期停用的需在设置中手动恢复）：{disabledSources.map((key) => sourceName(key)).join('、')}
+                {disabledSources.length}{' '}
+                {t('个源因连续超时/失败已暂停参与搜索（临时停用的到期自动恢复，长期停用的需在设置中手动恢复）：')}
+                {disabledSources.map((key) => sourceName(key)).join('、')}
               </div>
             )}
 
             {offSubscriptionSources.length > 0 && (
               <div className="mb-3 text-xs text-faint bg-chip rounded-lg px-3 py-2">
-                {offSubscriptionSources.length} 个源所属的订阅已停用，未参与本次搜索（在设置 → 数据源订阅中可重新启用）：
+                {offSubscriptionSources.length}{' '}
+                {t('个源所属的订阅已停用，未参与本次搜索（在设置 → 数据源订阅中可重新启用）：')}
                 {offSubscriptionSources.map((key) => sourceName(key)).join('、')}
               </div>
             )}
@@ -346,7 +351,7 @@ function HomeContent() {
                       className="btn-ghost btn-sm"
                       onClick={() => setVisibleCount((v) => v + RESULT_PAGE_SIZE)}
                     >
-                      加载更多（还有 {groups.length - visibleCount} 部）
+                      {t('加载更多')}（{t('还有')} {groups.length - visibleCount} {t('部')}）
                     </button>
                   </div>
                 )}
@@ -356,8 +361,8 @@ function HomeContent() {
             ) : (
               <EmptyState
                 icon="search"
-                title="没有找到匹配的结果"
-                description="请尝试其他关键词或更换点播源"
+                title={t('没有找到匹配的结果')}
+                description={t('请尝试其他关键词或更换点播源')}
                 className="!py-16"
               />
             )}
@@ -402,17 +407,19 @@ function ResultsSkeleton() {
 
 /** 无点播源 / 未勾选点播源时的引导（替代旧版首屏静默空白） */
 function NoSourceGuide({ hasSources = false }: { hasSources?: boolean }) {
+  const { t } = useI18n();
   return (
     <div className="border border-dashed border-line rounded-xl p-10 text-center max-w-lg mx-auto">
-      <h3 className="text-content font-medium mb-2">{hasSources ? '尚未勾选点播源' : '先添加一个点播源'}</h3>
+      <h3 className="text-content font-medium mb-2">{hasSources ? t('尚未勾选点播源') : t('先添加一个点播源')}</h3>
       <p className="text-sm text-muted leading-relaxed">
         {hasSources ? (
-          <>点击右上角「设置」，勾选要参与搜索的点播源后重新搜索。</>
+          <>{t('点击右上角「设置」，勾选要参与搜索的点播源后重新搜索。')}</>
         ) : (
           <>
-            LibreTV 不内置任何采集站。点击右上角「设置 → 添加 API」，填入一个
-            Apple CMS 采集站地址（如 <code className="text-accent text-xs">https://example.com/api.php/provide/vod</code>），
-            勾选后即可开始搜索。
+            {t('LibreTV 不内置任何采集站。点击右上角「设置 → 添加 API」，填入一个')}
+            {t('Apple CMS 采集站地址（如')}{' '}
+            <code className="text-accent text-xs">https://example.com/api.php/provide/vod</code>
+            {t('），勾选后即可开始搜索。')}
           </>
         )}
       </p>
