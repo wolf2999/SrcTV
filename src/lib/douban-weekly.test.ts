@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { baiduTeleplayToItem, doubanWeeklyToItem, isHotListId } from './douban-weekly';
+import {
+  baiduTeleplayToItem,
+  doubanWeeklyToItem,
+  isHotListId,
+  rexxarSubjectToItem,
+} from './douban-weekly';
 
 describe('isHotListId', () => {
   it('白名单校验', () => {
@@ -47,6 +52,41 @@ describe('doubanWeeklyToItem', () => {
     expect(doubanWeeklyToItem({ title: 'x', cover: 'c' }, false)).toBeUndefined();
     expect(doubanWeeklyToItem({ id: 1, cover: 'c' }, false)).toBeUndefined();
     expect(doubanWeeklyToItem({ id: 1, title: 'x' }, false)).toBeUndefined();
+  });
+});
+
+describe('rexxarSubjectToItem', () => {
+  it('扁平字段正确映射，rating 取 rating.value', () => {
+    const item = rexxarSubjectToItem({
+      id: '37215318',
+      title: '黑球',
+      type: 'movie',
+      rating: { value: 8.6 },
+      cover_url: 'https://img9.doubanio.com/p.jpg',
+    });
+    expect(item).toEqual({
+      id: '37215318',
+      title: '黑球',
+      cover: 'https://img9.doubanio.com/p.jpg',
+      rating: '8.6',
+      isTv: false,
+    });
+  });
+
+  it('tv 类型 isTv 为真，cover 缺失时回退 pic.large', () => {
+    const item = rexxarSubjectToItem({
+      id: 1,
+      title: 'x',
+      type: 'tv',
+      pic: { large: 'https://img9.doubanio.com/large.jpg' },
+    });
+    expect(item).toMatchObject({ isTv: true, cover: 'https://img9.doubanio.com/large.jpg' });
+  });
+
+  it('缺标题或封面的脏数据丢弃', () => {
+    expect(rexxarSubjectToItem({ id: 1 })).toBeUndefined();
+    expect(rexxarSubjectToItem({ id: 1, title: 'x' })).toBeUndefined();
+    expect(rexxarSubjectToItem({ type: 'tv', title: 'x' })).toBeUndefined();
   });
 });
 

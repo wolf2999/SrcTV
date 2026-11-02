@@ -12,6 +12,11 @@ import { DoubanCard } from './video-card';
 const MOVIE_TAGS = ['热门', '最新', '经典', '豆瓣高分', '冷门佳片', '华语', '欧美', '韩国', '日本', '动画'];
 const TV_TAGS = ['热门', '美剧', '英剧', '韩剧', '日剧', '国产剧', '港剧', '日本动画', '综艺', '纪录片'];
 const WEEKDAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+// 年代筛选：豆瓣接口把年份当 tag 用（tag=2025 / tag=90年代），
+// 与标签行共用同一个 tag 参数，因此两行互斥（选中年代时标签行失效）。
+// 2000 年以前没有逐年年份数据，用豆瓣官方的年代标签近似（90年代 = <2000，80年代 = <1990）。
+const RECENT_YEARS = ['2026', '2025', '2024', '2023', '2022', '2021', '2020', '2019', '2018', '2017', '2016', '2015', '2014', '2013', '2012', '2011', '2010', '2000'];
+const OLDER_ERAS = ['90年代', '80年代'];
 
 /** 首页推荐区：数据源由设置决定（豆瓣热门 / Bangumi 新番放送 / 影视热榜），二选一展示 */
 export function RecommendSection({ onPick }: { onPick: (title: string) => void }) {
@@ -32,6 +37,8 @@ export function RecommendSection({ onPick }: { onPick: (title: string) => void }
 function DoubanView({ onPick }: { onPick: (title: string) => void }) {
   const [type, setType] = useState<'movie' | 'tv'>('movie');
   const [tag, setTag] = useState('热门');
+  // 年代筛选：'' = 全部；选中时直接以年代作为请求 tag
+  const [year, setYear] = useState('');
   // 「管理标签」面板开关
   const [managing, setManaging] = useState(false);
   const { t } = useI18n();
@@ -39,9 +46,11 @@ function DoubanView({ onPick }: { onPick: (title: string) => void }) {
   const addDoubanTag = useAppStore((s) => s.addDoubanTag);
   const removeDoubanTag = useAppStore((s) => s.removeDoubanTag);
 
+  // 年代与标签共用请求 tag 参数：有年代用年代，否则用标签行选中值
+  const effectiveTag = year || tag;
   const query = useQuery({
-    queryKey: ['douban', type, tag],
-    queryFn: ({ signal }) => api.douban(type, tag, 0, 50, signal),
+    queryKey: ['douban', type, effectiveTag],
+    queryFn: ({ signal }) => api.douban(type, effectiveTag, 0, 50, signal),
   });
 
   // 内置标签 + 用户自定义标签（自定义追加在尾部，豆瓣接口接受任意 tag）；
@@ -54,6 +63,19 @@ function DoubanView({ onPick }: { onPick: (title: string) => void }) {
     if (t === type) return;
     setType(t);
     setTag('热门');
+    setYear('');
+  };
+
+  const pickTag = (tg: string) => {
+    setTag(tg);
+    setYear('');
+  };
+
+  // 类型行与年代行互斥：选年代时把标签重置回默认「热门」（标签行高亮条件含 !year，视觉上即取消选择）；
+  // 点「全部」清除年代后恢复默认标签
+  const pickYear = (y: string) => {
+    setYear(y);
+    if (y) setTag('热门');
   };
 
   return (
@@ -71,16 +93,17 @@ function DoubanView({ onPick }: { onPick: (title: string) => void }) {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-1.5 mb-4">
-        {/* 注意：循环变量不能用 t（会遮蔽翻译函数），tag 展示经翻译、请求仍用原词 */}
+      <div className="flex flex-wrap gap-1.5 mb-2">
+        {/* 注意：循环变量不能用 t（会遮蔽翻译函数），tag 展示经翻译、请求仍用原词；
+            选中年代时标签行整体退为未选中态（接口单 tag，两行互斥） */}
         {tags.map((tg) => (
           <button
             key={tg}
             className={cn(
               'px-2.5 py-1 rounded-full text-xs transition-colors',
-              tg === tag ? 'bg-accent text-on-accent' : 'bg-chip text-muted hover:text-content hover:bg-hover'
+              !year && tg === tag ? 'bg-accent text-on-accent' : 'bg-chip text-muted hover:text-content hover:bg-hover'
             )}
-            onClick={() => setTag(tg)}
+            onClick={() => pickTag(tg)}
           >
             {t(tg)}
           </button>
@@ -92,6 +115,43 @@ function DoubanView({ onPick }: { onPick: (title: string) => void }) {
         >
           {t('+ 管理标签')}
         </button>
+      </div>
+
+      {/* 年代行：全部 = 不筛年代（回退到标签行选中值） */}
+      <div className="flex flex-wrap gap-1.5 mb-4">
+        <button
+          className={cn(
+            'px-2.5 py-1 rounded-full text-xs transition-colors',
+            !year ? 'bg-accent text-on-accent' : 'bg-chip text-muted hover:text-content hover:bg-hover'
+          )}
+          onClick={() => setYear('')}
+        >
+          {t('全部')}
+        </button>
+        {RECENT_YEARS.map((y) => (
+          <button
+            key={y}
+            className={cn(
+              'px-2.5 py-1 rounded-full text-xs transition-colors',
+              year === y ? 'bg-accent text-on-accent' : 'bg-chip text-muted hover:text-content hover:bg-hover'
+            )}
+            onClick={() => pickYear(y)}
+          >
+            {y}
+          </button>
+        ))}
+        {OLDER_ERAS.map((era) => (
+          <button
+            key={era}
+            className={cn(
+              'px-2.5 py-1 rounded-full text-xs transition-colors',
+              year === era ? 'bg-accent text-on-accent' : 'bg-chip text-muted hover:text-content hover:bg-hover'
+            )}
+            onClick={() => pickYear(era)}
+          >
+            {t(era)}
+          </button>
+        ))}
       </div>
 
       {managing && (
