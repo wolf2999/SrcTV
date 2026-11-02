@@ -1,0 +1,4 @@
+<resources>
+    <!-- 电视版在主屏横幅下方显示的名称（与手机版区分）。 -->
+    <string name="app_name_tv">SrcTV（电视版）</string>
+</resources>

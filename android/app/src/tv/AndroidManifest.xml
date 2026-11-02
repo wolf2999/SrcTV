@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 电视版 flavor 清单：
+     - 声明 LEANBACK_LAUNCHER 入口，让 App 出现在 TV 主屏（而非手机桌面）；
+     - 声明 leanback 为必需、触屏为非必需，否则 Android TV 会拒绝安装 / 不在主页显示；
+     - 提供 android:banner 横幅（TV 主屏用横幅而非图标）。 -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-feature
+        android:name="android.software.leanback"
+        android:required="true" />
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="false" />
+
+    <!-- tools:replace 让 TV 版用专属名称覆盖主清单的 android:label -->
+    <application
+        android:banner="@drawable/banner"
+        android:label="@string/app_name_tv"
+        tools:replace="android:label">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

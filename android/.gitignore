@@ -1,0 +1,12 @@
+# 构建产物
+build/
+.gradle/
+
+# 机器专属 / 密钥（不要提交）
+local.properties
+app/release-key.jks
+app/keystore.properties
+app/keytool.log
+
+# 日志
+*.log

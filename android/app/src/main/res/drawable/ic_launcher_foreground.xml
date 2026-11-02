@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 自适应图标前景：白色电视图形（居中，108dp 画布，安全区约 66dp 内） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 天线 -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M44,28 L54,38 M64,28 L54,38" />
+
+    <!-- 机身圆角矩形 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,38 h48 a6,6 0 0 1 6,6 v26 a6,6 0 0 1 -6,6 h-48 a6,6 0 0 1 -6,-6 v-26 a6,6 0 0 1 6,-6 z" />
+
+    <!-- 屏幕（蓝色镂空，露出背景色） -->
+    <path
+        android:fillColor="#2563EB"
+        android:pathData="M32,46 h44 v20 h-44 z" />
+
+    <!-- 屏幕上的播放三角 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M49,50 L61,56 L49,62 Z" />
+</vector>

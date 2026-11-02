@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android TV 主屏横幅（建议 320×180 mdpi / 640×360 xhdpi；矢量可无损缩放）。
+     系统会在横幅上叠加显示应用名文字，故此处无需画文字，仅做品牌底色 + 播放三角。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="640dp"
+    android:height="360dp"
+    android:viewportWidth="640"
+    android:viewportHeight="360">
+    <!-- 深蓝底色 -->
+    <path android:fillColor="#0B1E3B" android:pathData="M0,0h640v360H0z" />
+    <!-- 上半部稍亮的蓝，形成轻微渐变感 -->
+    <path android:fillColor="#16335F" android:pathData="M0,0h640v200H0z" />
+    <!-- 白色圆 + 蓝色播放三角，暗示「视频」 -->
+    <path android:fillColor="#FFFFFF" android:pathData="M250,120a70,70 0 1,0 0.1,0z" />
+    <path android:fillColor="#0B1E3B" android:pathData="M232,95 L300,160 L232,225 Z" />
+</vector>

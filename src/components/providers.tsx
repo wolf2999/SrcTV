@@ -44,6 +44,30 @@ export function Providers({ children }: { children: ReactNode }) {
       .catch(() => {});
   }, [queryClient]);
 
+  // 首屏自动导入随站打包的 LibreTV-SourceList.json：仅当用户尚未配置任何点播/预置源、
+  // 且已登录（/api/source-list 需要鉴权）时触发一次。复用 importSourceListContent，
+  // 走与「设置里手动文件导入」完全相同的服务端解析 + SSRF 校验管线，失败静默忽略。
+  // 这样 Web 与 APK 首次登录后开箱即带默认点播/直播源，无需手动导入。
+  useEffect(() => {
+    let importing = false;
+    const FLAG = 'lt_bundled_source_imported';
+    const unsub = useAppStore.subscribe((s) => {
+      if (importing || !s.verified) return;
+      const hasSources = s.customAPIs.length > 0 || s.envSources.length > 0;
+      if (hasSources || localStorage.getItem(FLAG)) return;
+      importing = true;
+      fetch('/LibreTV-SourceList.json')
+        .then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`))))
+        .then((text) => importSourceListContent(text))
+        .then(() => localStorage.setItem(FLAG, '1'))
+        .catch(() => {
+          // 失败不写标记，下次满足条件再试；复位 importing 避免永久卡死
+          importing = false;
+        });
+    });
+    return unsub;
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       {/* i18n Provider 用同步 localStorage 初始化 locale（独立于 zustand），

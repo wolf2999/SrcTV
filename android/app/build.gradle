@@ -1,0 +1,79 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.srctv.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.srctv.app"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    // 同一份 WebView 壳代码，产出手机版 / 电视版两个 APK。
+    // 两个 flavor 用不同 applicationId，可同设备共存；TV 版包名为 com.srctv.apptv。
+    flavorDimensions "form"
+    productFlavors {
+        mobile {
+            dimension "form"
+            applicationId "com.srctv.app"
+        }
+        tv {
+            dimension "form"
+            applicationId "com.srctv.apptv"
+        }
+    }
+
+    // 自动签名：构建脚本会生成 android/app/keystore.properties + release-key.jks，
+    // 这里读取其配置让 assembleRelease 无需在 Android Studio 里手动填签名。
+    signingConfigs {
+        release {
+            def propsFile = file('keystore.properties')
+            if (propsFile.exists()) {
+                def props = new Properties()
+                props.load(new FileInputStream(propsFile))
+                storeFile file(props['storeFile'])
+                storePassword props['storePassword']
+                keyAlias props['keyAlias']
+                keyPassword props['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // 仅当 keystore.properties 存在时才挂签名，否则退化为未签名（仍可侧载安装）
+            if (file('keystore.properties').exists()) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    // 与 Material3 同款 JDK 17 工具链
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    // 开启 BuildConfig 生成（AGP 8.4+ 默认关闭），供 flavor 区分（BuildConfig.FLAVOR）
+    buildFeatures {
+        buildConfig true
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.webkit:webkit:1.11.0'
+    implementation 'com.google.android.material:material:1.12.0'
+}
