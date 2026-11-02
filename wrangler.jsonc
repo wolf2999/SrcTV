@@ -9,7 +9,9 @@
   "main": ".open-next/worker.js",
   "compatibility_date": "2026-10-01",
   // Next.js 服务端代码依赖 Node API（代理、SSRF 校验等），必须开启
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
