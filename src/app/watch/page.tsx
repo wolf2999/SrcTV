@@ -20,6 +20,7 @@ import { SwitchSourceModal } from '@/components/switch-source';
 import { SkipMarkPanel } from '@/components/skip-mark-panel';
 import { skipMarkKey, validateSegment, type SkipSegment } from '@/lib/skip-marks';
 import type { PlayerSkipApi } from '@/components/player-shell';
+import { useTvPlayerControls } from '@/components/tv/useTvPlayerControls';
 import { useToast } from '@/components/toast';
 import { enqueueDownload } from '@/components/download-manager';
 import { Icon } from '@/components/icon';
@@ -252,6 +253,21 @@ function WatchContent() {
 
   const orderedEpisodes = reversed ? [...episodes].map((_, i) => episodes.length - 1 - i) : episodes.map((_, i) => i);
 
+  // M3 / FR-7.2 TV 播放控制层：遥控器在可见控制条按钮间导航（←/→）、↑/↓ 换集、
+  // Enter/空格 触发当前按钮（含全屏切换）、Esc 退出浏览剧集。逻辑全部集中在钩子内
+  // （零业务分支），仅在 TV 模式下才有视觉/交互（见 .tv-mode）。
+  const tvControls = useTvPlayerControls({
+    playerApiRef,
+    onPrevEpisode: () => {
+      if (currentIndex > 0) goEpisode(currentIndex - 1);
+    },
+    onNextEpisode: () => {
+      if (currentIndex < episodes.length - 1) goEpisode(currentIndex + 1);
+    },
+    hasPrevEpisode: currentIndex > 0,
+    hasNextEpisode: episodes.length > 0 && currentIndex < episodes.length - 1,
+  });
+
   if (!verified) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -290,6 +306,7 @@ function WatchContent() {
           <div className="ml-auto flex items-center gap-2">
             <button
               className="btn-ghost btn-sm"
+              data-tv-hide
               onClick={() => {
                 if (!currentUrl) return;
                 enqueueDownload({
@@ -357,6 +374,8 @@ function WatchContent() {
                   )}
                 </div>
               )}
+              {/* TV 播放控制层：覆盖在播放器上，仅 TV 模式可见/可聚焦（M3 / FR-7.2 可见控制条） */}
+              {tvControls.element}
             </div>
 
             {/* 操作栏 */}
@@ -452,7 +471,7 @@ function WatchContent() {
                 <EmptyState variant="plain" title={detailQuery.isError ? '获取剧集失败' : '暂无剧集信息'} />
               )
             ) : (
-              <div className="grid grid-cols-5 lg:grid-cols-4 gap-1.5 max-h-[65vh] overflow-y-auto scrollbar-thin pr-1">
+              <div data-tv-episode-list className="grid grid-cols-5 lg:grid-cols-4 gap-1.5 max-h-[65vh] overflow-y-auto scrollbar-thin pr-1">
                 {orderedEpisodes.map((realIndex) => (
                   <EpisodeButton
                     key={realIndex}

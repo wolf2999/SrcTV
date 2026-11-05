@@ -25,7 +25,9 @@ export type IconName =
   | 'alert'
   | 'gear'
   | 'home'
-  | 'globe';
+  | 'globe'
+  | 'mic'
+  | 'backspace';
 
 const PATHS: Record<IconName, ReactNode> = {
   close: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />,
@@ -150,6 +152,27 @@ const PATHS: Record<IconName, ReactNode> = {
       strokeWidth={2}
       d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0 0c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3 7.5 7.03 7.5 12s2.015 9 4.5 9ZM3.6 9h16.8M3.6 15h16.8"
     />
+  ),
+  // 麦克风（TV 语音输入）
+  mic: (
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z"
+    />
+  ),
+  // 删除（退回一格）
+  backspace: (
+    <>
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M7.5 4.5h9A1.5 1.5 0 0 1 18 6v12a1.5 1.5 0 0 1-1.5 1.5h-9L3 12l4.5-9Z"
+      />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.5 9 7.5 12l3 3" />
+    </>
   ),
 };
 

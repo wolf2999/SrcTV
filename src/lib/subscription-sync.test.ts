@@ -145,43 +145,45 @@ describe('applyEnvPresets', () => {
 });
 
 describe('applyEnvPresets · DEFAULT_RECOMMEND_SOURCE（issue #918）', () => {
+  // 出厂默认 2026-11-04 已从 hot-list 改为 douban，哨兵判断同步更新；
+  // 部署者默认值在用例里用 bangumi / hot-list 表达「与出厂默认不同」的覆盖值。
   it('未配置时不改动推荐数据源', async () => {
-    useAppStore.setState({ recommendSource: 'hot-list', recommendSourceTouched: false });
+    useAppStore.setState({ recommendSource: 'douban', recommendSourceTouched: false });
     await applyEnvPresets(status());
-    expect(useAppStore.getState().recommendSource).toBe('hot-list');
+    expect(useAppStore.getState().recommendSource).toBe('douban');
   });
 
   it('对未主动选择过的用户应用部署者默认值，且不打「已选择」标记', async () => {
-    useAppStore.setState({ recommendSource: 'hot-list', recommendSourceTouched: false });
-    await applyEnvPresets(status({ defaultRecommendSource: 'douban' }));
-    expect(useAppStore.getState().recommendSource).toBe('douban');
+    useAppStore.setState({ recommendSource: 'douban', recommendSourceTouched: false });
+    await applyEnvPresets(status({ defaultRecommendSource: 'bangumi' }));
+    expect(useAppStore.getState().recommendSource).toBe('bangumi');
     // 自动预置不算用户主动选择：部署者日后调整默认值时该用户应跟随
     expect(useAppStore.getState().recommendSourceTouched).toBe(false);
   });
 
   it('已主动选择过的用户（如 bangumi）不被覆盖', async () => {
     useAppStore.setState({ recommendSource: 'bangumi', recommendSourceTouched: true });
-    await applyEnvPresets(status({ defaultRecommendSource: 'douban' }));
+    await applyEnvPresets(status({ defaultRecommendSource: 'hot-list' }));
     expect(useAppStore.getState().recommendSource).toBe('bangumi');
   });
 
-  it('显式选回 hot-list 的用户（带「已选择」标记）不被覆盖', async () => {
-    useAppStore.setState({ recommendSource: 'hot-list', recommendSourceTouched: true });
-    await applyEnvPresets(status({ defaultRecommendSource: 'douban' }));
+  it('显式选回出厂默认 douban 的用户（带「已选择」标记）不被覆盖', async () => {
+    useAppStore.setState({ recommendSource: 'douban', recommendSourceTouched: true });
+    await applyEnvPresets(status({ defaultRecommendSource: 'hot-list' }));
+    expect(useAppStore.getState().recommendSource).toBe('douban');
+  });
+
+  it('存量用户：从未打过标记但偏好已不是出厂默认值的（老版本手动改过或旧默认 hot-list）不被覆盖', async () => {
+    useAppStore.setState({ recommendSource: 'hot-list', recommendSourceTouched: false });
+    await applyEnvPresets(status({ defaultRecommendSource: 'bangumi' }));
     expect(useAppStore.getState().recommendSource).toBe('hot-list');
   });
 
-  it('存量用户：从未打过标记但偏好已不是出厂默认值的（老版本手动改过）不被覆盖', async () => {
-    useAppStore.setState({ recommendSource: 'bangumi', recommendSourceTouched: false });
-    await applyEnvPresets(status({ defaultRecommendSource: 'douban' }));
-    expect(useAppStore.getState().recommendSource).toBe('bangumi');
-  });
-
   it('重复调用幂等：应用一次后再调用不改变结果', async () => {
-    useAppStore.setState({ recommendSource: 'hot-list', recommendSourceTouched: false });
-    await applyEnvPresets(status({ defaultRecommendSource: 'douban' }));
-    await applyEnvPresets(status({ defaultRecommendSource: 'douban' }));
-    expect(useAppStore.getState().recommendSource).toBe('douban');
+    useAppStore.setState({ recommendSource: 'douban', recommendSourceTouched: false });
+    await applyEnvPresets(status({ defaultRecommendSource: 'bangumi' }));
+    await applyEnvPresets(status({ defaultRecommendSource: 'bangumi' }));
+    expect(useAppStore.getState().recommendSource).toBe('bangumi');
     expect(useAppStore.getState().recommendSourceTouched).toBe(false);
   });
 });

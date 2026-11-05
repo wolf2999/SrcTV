@@ -342,7 +342,9 @@ export const useAppStore = create<AppState>()(
       yellowFilter: true,
       adFilter: true,
       doubanEnabled: true,
-      recommendSource: 'hot-list',
+      // 出厂默认豆瓣热门：首次打开站点的用户（无任何持久化）首页直接展示豆瓣推荐，
+      // 与设置面板「推荐数据源」下拉的默认选中项一致（2026-11-04 应部署者要求从 hot-list 改为 douban）
+      recommendSource: 'douban',
       recommendSourceTouched: false,
       autoplayNext: true,
       skipMarks: {},

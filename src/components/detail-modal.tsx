@@ -214,7 +214,10 @@ export function DetailModal({ item, onClose }: { item: SearchResultItem | null; 
                       复制链接
                     </button>
                   </div>
-                  <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 gap-2 max-h-[40vh] overflow-y-auto scrollbar-thin pr-1">
+                  {/* 注意：TV 模式焦点描边是 outline（外扩 offset2+宽3≈5px），而 overflow-y-auto
+                      会把子孙绘制裁剪到容器 padding box——第一行/首列按钮的 outline 左上/下边会贴边被裁
+                      （表现为只剩一条竖线）。这里用 p-2（8px）给 outline 留出绘制空间，pr-1 改为 p-2。 */}
+                  <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 gap-2 max-h-[40vh] overflow-y-auto scrollbar-thin p-2">
                     {episodes.map((_, i) => {
                       const realIndex = reversed ? detail.episodes.length - 1 - i : i;
                       return (

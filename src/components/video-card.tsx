@@ -155,7 +155,14 @@ export function AggregatedCard({
         aria-expanded={multi ? expanded : undefined}
         onClick={activate}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
+          // Enter 交全局 TV 焦点引擎统一处理：引擎在捕获阶段对焦点元素派发 click，
+          // 卡片 onClick(activate) 会被调用一次。若这里再处理 Enter 会与引擎叠加成
+          // 两次 activate，多源卡表现为「展开↔收起」反复抵消（确认键看起来无效）。
+          // 因此当引擎已安装（TV 模式）时，本处理器只保留 Space（引擎不处理 Space）；
+          // 引擎未安装（网页端）时则自行处理 Enter/Space，保证无遥控器的网页键盘可用。
+          const tvEngine = (window as unknown as { __tvFocusInstalled?: boolean })
+            .__tvFocusInstalled;
+          if (e.key === ' ' || (!tvEngine && e.key === 'Enter')) {
             e.preventDefault();
             activate();
           }
@@ -293,8 +300,13 @@ export function AggregatedCard({
                     onOpen(item);
                   }}
                   onKeyDown={(e) => {
-                    // 不拦冒泡会连带触发整卡的 activate（外层 div 也在监听 Enter/Space）
-                    if (e.key !== 'Enter' && e.key !== ' ') return;
+                    // TV 模式焦点引擎已在捕获阶段对来源行派发 click（onClick=onOpen），
+                    // 故此处只补 Space、且引擎已安装时不重复处理 Enter，避免与引擎叠加成
+                    // 两次 onOpen（确认键重复跳转）。stopPropagation 仍要保留，防止冒泡到
+                    // 整卡再次触发 activate（展开/收起相互干扰）。
+                    const tvEngine = (window as unknown as { __tvFocusInstalled?: boolean })
+                      .__tvFocusInstalled;
+                    if (e.key !== ' ' && !(e.key === 'Enter' && !tvEngine)) return;
                     e.preventDefault();
                     e.stopPropagation();
                     onOpen(item);
@@ -345,8 +357,11 @@ export function VideoCard({ item, onClick }: { item: SearchResultItem; onClick: 
       tabIndex={0}
       onClick={onClick}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          // 阻止空格触发页面滚动（AggregatedCard 已是此写法，此处对齐）
+        // 与 AggregatedCard 同因：TV 模式焦点引擎统一派发 click 处理 Enter，
+        // 这里引擎已安装时只保留 Space，否则自行处理 Enter/Space，避免双重触发。
+        const tvEngine = (window as unknown as { __tvFocusInstalled?: boolean })
+          .__tvFocusInstalled;
+        if (e.key === ' ' || (!tvEngine && e.key === 'Enter')) {
           e.preventDefault();
           onClick();
         }
@@ -407,8 +422,11 @@ export function DoubanCard({ item, onClick }: { item: { title: string; cover: st
       tabIndex={0}
       onClick={onClick}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          // 阻止空格触发页面滚动（AggregatedCard 已是此写法，此处对齐）
+        // 与 AggregatedCard 同因：TV 模式焦点引擎统一派发 click 处理 Enter，
+        // 这里引擎已安装时只保留 Space，否则自行处理 Enter/Space，避免双重触发。
+        const tvEngine = (window as unknown as { __tvFocusInstalled?: boolean })
+          .__tvFocusInstalled;
+        if (e.key === ' ' || (!tvEngine && e.key === 'Enter')) {
           e.preventDefault();
           onClick();
         }

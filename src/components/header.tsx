@@ -11,6 +11,8 @@ import { Icon } from './icon';
 import { SearchHistoryDropdown, useSearchHistory } from './search-history';
 import { LOCALE_META, useI18n, type Locale } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { isTvMode } from '@/lib/tv-mode';
+import { useTvKeyboard } from './tv/useTvKeyboard';
 
 /** 顶部导航：Logo、搜索框（首页外）、语言切换、历史、设置 */
 export function Header({ showSearch = false }: { showSearch?: boolean }) {
@@ -22,6 +24,13 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
   const [query, setQuery] = useState('');
   // 与首页搜索框共用同一套「最近搜索」下拉逻辑
   const searchHistory = useSearchHistory(query);
+
+  // TV 模式：搜索框聚焦时弹出虚拟键盘（英文/数字 + 语音）；网页模式不弹
+  const kb = useTvKeyboard({
+    value: query,
+    onChange: setQuery,
+    onSubmit: () => submitSearch(query),
+  });
 
   const submitSearch = (text: string) => {
     const q = text.trim().slice(0, 100);
@@ -70,7 +79,10 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
                     setQuery(e.target.value);
                     searchHistory.resetActive();
                   }}
-                  onFocus={searchHistory.onFocus}
+                  onFocus={() => {
+                    if (isTvMode()) kb.handleInputFocus();
+                    else searchHistory.onFocus();
+                  }}
                   onKeyDown={(e) => searchHistory.onKeyDown(e, pickHistory)}
                   role="combobox"
                   aria-expanded={searchHistory.visible}
@@ -110,10 +122,18 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
             <IconButton label={t('观看历史')} onClick={() => setHistoryOpen(true)}>
               <Icon name="clock" />
             </IconButton>
-            <IconButton label={t('下载管理')} onClick={requestShowDownloadManager}>
+            {/* data-tv-hide：TV 模式隐藏标记（惰性 data 钩子，无逻辑分支）。
+                下载管理与设置入口在 TV 上由 Web 端 TV 层隐藏（tv.css）：
+                下载依赖鼠标/长按交互遥控器用不上；设置页表单密集不适合远距离操作。
+                网页模式不挂 .tv-mode，此标记不产生任何效果。 */}
+            <IconButton
+              label={t('下载管理')}
+              data-tv-hide="download"
+              onClick={requestShowDownloadManager}
+            >
               <Icon name="download" />
             </IconButton>
-            <IconButton label={t('设置')} onClick={() => setSettingsOpen(true)}>
+            <IconButton label={t('设置')} data-tv-hide="settings" onClick={() => setSettingsOpen(true)}>
               <Icon name="gear" />
             </IconButton>
           </nav>
@@ -122,6 +142,7 @@ export function Header({ showSearch = false }: { showSearch?: boolean }) {
 
       <SourceManagerDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <HistoryPanel open={historyOpen} onClose={() => setHistoryOpen(false)} />
+      {kb.keyboard}
     </>
   );
 }
@@ -201,13 +222,24 @@ function HeaderLink({ href, active, children }: { href: string; active: boolean;
   );
 }
 
-function IconButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
+function IconButton({
+  label,
+  onClick,
+  children,
+  ...rest
+}: {
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+  /** 允许调用方附加惰性 data-* 属性（如 data-tv-hide），供 TV 层 CSS 选择器使用 */
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
       className="p-2 rounded-md text-muted hover:text-content hover:bg-hover transition-colors"
       title={label}
       aria-label={label}
       onClick={onClick}
+      {...rest}
     >
       {children}
     </button>

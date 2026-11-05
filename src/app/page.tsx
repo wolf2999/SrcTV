@@ -17,6 +17,8 @@ import { useToast } from '@/components/toast';
 import { EmptyState } from '@/components/states';
 import { Icon } from '@/components/icon';
 import { SiteFooter } from '@/components/site-footer';
+import { isTvMode } from '@/lib/tv-mode';
+import { useTvKeyboard } from '@/components/tv/useTvKeyboard';
 
 /**
  * 首页：搜索（URL ?s= 驱动，可后退/分享）+ 豆瓣推荐。
@@ -120,6 +122,13 @@ function HomeContent() {
 
   // 最近搜索改为搜索框下拉（聚焦展开、按输入过滤），不再常驻首屏
   const searchHistory = useSearchHistory(input);
+
+  // TV 模式：搜索框聚焦时弹出虚拟键盘（英文/数字 + 语音）；网页模式不弹
+  const kb = useTvKeyboard({
+    value: input,
+    onChange: setInput,
+    onSubmit: () => runSearch(input),
+  });
 
   const runSearch = (q: string) => {
     const query = q.trim().slice(0, 100);
@@ -225,7 +234,10 @@ function HomeContent() {
                     setInput(e.target.value);
                     searchHistory.resetActive();
                   }}
-                  onFocus={searchHistory.onFocus}
+                  onFocus={() => {
+                    if (isTvMode()) kb.handleInputFocus();
+                    else searchHistory.onFocus();
+                  }}
                   onKeyDown={(e) => searchHistory.onKeyDown(e, pickHistory)}
                   role="combobox"
                   aria-label={t('搜索影片')}
@@ -383,6 +395,7 @@ function HomeContent() {
       <SiteFooter />
 
       <DetailModal item={detailItem} onClose={() => setDetailItem(null)} />
+      {kb.keyboard}
     </div>
   );
 }

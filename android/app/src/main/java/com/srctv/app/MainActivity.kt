@@ -1,9 +1,15 @@
 package com.srctv.app
 
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
+import android.Manifest
 import android.graphics.Bitmap
 import android.os.Bundle
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -11,11 +17,19 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
+import android.webkit.ValueCallback
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.OnBackPressedCallback
-import com.srctv.app.BuildConfig
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import com.srctv.app.BuildConfig
+import java.util.ArrayList
+import java.util.Locale
 
 /**
  * SrcTV 安卓壳：用 WebView 加载已部署的 Web 站点（Cloudflare Workers 无法在安卓内运行，
@@ -23,9 +37,8 @@ import androidx.appcompat.app.AppCompatActivity
  *
  * 工程含两个 product flavor（见 app/build.gradle 的 form 维度）：
  * - mobile：手机版，包名 com.srctv.app，桌面 LAUNCHER 启动；
- * - tv：电视版，包名 com.srctv.apptv，TV 主屏 LEANBACK_LAUNCHER 启动，并额外注入
- *   遥控器方向键 → 网页焦点移动的适配（injectTvNav）。
- * 两个 flavor 共用本 WebView 壳代码与自动登录/导入逻辑，无需另起工程。
+ * - tv：电视版，包名 com.srctv.apptv，TV 主屏 LEANBACK_LAUNCHER 启动，并注入
+ *   window.__TV__ 标志；方向键焦点导航由 Web 端 TV 引擎接管（src/lib/tv-focus.ts）。
  *
  * 自动处理两件事（无需打开浏览器、无需手动操作）：
  * 1. 免输密码：在下方 APP_PASSWORD 填入你部署时设置的访问密码，App 打开即自动登录；
@@ -39,21 +52,51 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         // 改成你部署后的地址（Cloudflare Workers 域名或自定义域名）
-        private const val START_URL = "https://srctv.xyza.workers.dev"
+        private const val START_URL = "http://10.10.20.27:8090"
+        //private const val START_URL = "https://srctv.xyza.workers.dev"
 
         /**
          * 部署时设置的访问密码。填了之后 App 打开自动登录，永不再弹密码框。
          * 留空（""）则首次手动输入一次后自动记住，以后免输。
          */
-        private const val APP_PASSWORD = ""
+        private const val APP_PASSWORD = "hui123456"
 
         // APK 内置的默认源列表（assets 目录下）
         private const val SOURCE_LIST_ASSET = "LibreTV-SourceList.json"
+
+        // 语音输入所需的 RECORD_AUDIO 权限请求码
+        private const val REQUEST_RECORD_AUDIO = 2001
     }
 
     private lateinit var webView: WebView
     private var customView: View? = null
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
+
+    // 语音识别器（TV 搜索语音输入）：懒创建，销毁时释放
+    private var speechRecognizer: SpeechRecognizer? = null
+    private var pendingVoiceStart = false
+
+    // M4-3：TV 降级网页全屏时的沉浸式状态（网页经 SrctvBridge.toggleImmersive 切换）
+    private var immersive = false
+
+    /**
+     * 切换沉浸式（隐藏/显示系统状态栏+导航栏）。TV WebView 拒绝 Element Fullscreen 时，
+     * 网页降级为 CSS 网页全屏并调用本方法配合隐藏系统栏，达到接近原生全屏的观感。
+     * JavascriptInterface 方法跑在 JS 线程，UI 操作必须切回主线程。
+     */
+    private fun toggleImmersive() {
+        runOnUiThread {
+            immersive = !immersive
+            val ctrl = WindowCompat.getInsetsController(window, window.decorView)
+            if (immersive) {
+                ctrl.systemBarsBehavior =
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                ctrl.hide(WindowInsetsCompat.Type.systemBars())
+            } else {
+                ctrl.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -67,10 +110,34 @@ class MainActivity : AppCompatActivity() {
             this,
             object : OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
+                    // 全屏播放（HTML5 视频全屏）时按返回先退出全屏，而不是回退页面
                     if (customView != null) {
                         webView.webChromeClient?.onHideCustomView()
                         return
                     }
+                    // TV 模式返回键协调（M4-1）：先问网页是否有打开的弹窗（role=dialog /
+                    // alertdialog 等）。若有，网页负责关闭该弹窗并消费本次返回
+                    // （__srctvConsumeBack 返回 true），壳不再路由后退；若无弹窗，网页返回
+                    // false，壳按既有逻辑回退 WebView 历史或退出应用（FR-6.2）。
+                    // 仅 TV 风味生效；移动端保持原行为（直接 goBack / finish）。
+                    if (BuildConfig.FLAVOR == "tv") {
+                        webView.evaluateJavascript(
+                            "(function(){return (typeof window.__srctvConsumeBack==='function')?window.__srctvConsumeBack():false;})()",
+                            object : ValueCallback<String> {
+                                override fun onReceiveValue(result: String?) {
+                                    val handled = result != null && result == "true"
+                                    runOnUiThread {
+                                        if (!handled) {
+                                            // 网页未消费返回：回退 WebView 历史，无可回退则退出应用
+                                            if (webView.canGoBack()) webView.goBack() else finish()
+                                        }
+                                    }
+                                }
+                            }
+                        )
+                        return
+                    }
+                    // 历史可回退时回退 WebView 历史，否则退出应用
                     if (webView.canGoBack()) webView.goBack() else finish()
                 }
             }
@@ -104,9 +171,16 @@ class MainActivity : AppCompatActivity() {
         cookieManager.setAcceptCookie(true)
         cookieManager.setAcceptThirdPartyCookies(webView, true)
 
-        // 暴露 JS 桥：自动登录 + 自动导入源
+        // 暴露 JS 桥：自动登录 + 自动导入源 + 语音输入 + 沉浸式切换（TV 全屏降级）
         webView.addJavascriptInterface(
-            SrcTvBridge(applicationContext, APP_PASSWORD, SOURCE_LIST_ASSET),
+            SrcTvBridge(
+                applicationContext,
+                APP_PASSWORD,
+                SOURCE_LIST_ASSET,
+                this::isVoiceAvailable,
+                this::startVoiceInput,
+                this::toggleImmersive
+            ),
             "SrctvBridge"
         )
 
@@ -121,9 +195,11 @@ class MainActivity : AppCompatActivity() {
                 // 页面加载完成后注入自动登录 / 自动导入逻辑
                 override fun onPageFinished(view: WebView?, url: String?) {
                     autoSetup()
-                    // 电视版：注入遥控器方向键 → 网页焦点移动的适配（仅 tv flavor 生效）
+                    // 电视版：只注入 TV 模式标志。遥控器方向键的焦点导航完全由
+                    // Web 端空间焦点引擎（src/lib/tv-focus.ts）接管，壳内不再注入
+                    // 旧的线性循环导航（injectTvNav 已删除），避免双导航互相打架。
                     if (BuildConfig.FLAVOR == "tv") {
-                        injectTvNav()
+                        view?.evaluateJavascript("window.__TV__ = true;", null)
                     }
                 }
             }
@@ -277,80 +353,6 @@ class MainActivity : AppCompatActivity() {
         webView.evaluateJavascript(js, null)
     }
 
-    /**
-     * 电视版专属：把遥控器方向键正确转成网页焦点移动。
-     *
-     * 背景：Android TV 的遥控器方向键（KEYCODE_DPAD_*）会被 WebView 翻译成键盘
-     * Arrow 键派发给网页，但 LibreTV 这类 React SPA 大量使用 div + onClick，并非原生
-     * 可聚焦元素，浏览器内置的「空间导航」对它们无效，结果是「能打开、遥控点不动」。
-     *
-     * 这里注入一段 JS 做 roving-tabindex 式的焦点管理：
-     * - 收集页面上所有可交互元素（链接/按钮/输入/带 tabindex/role=button，且仅可见的）；
-     * - 方向键（上下左右）在元素间循环移动焦点，保证「焦点一定可动」；
-     * - 确认键（Enter，遥控器中心键即映射为 Enter）触发当前焦点元素的 click，
-     *   对 React 的 div onClick 同样有效；
-     * - 焦点落在输入框内时不拦截方向键，保证正常输入；
-     * - 页面加载后主动把焦点落到第一个可交互元素。
-     *
-     * 注意：this 方法只在 tv flavor（BuildConfig.FLAVOR == "tv"）被调用。
-     */
-    private fun injectTvNav() {
-        val js = """
-        (function () {
-          function list() {
-            var els = document.querySelectorAll(
-              'a[href], button:not([disabled]), input:not([disabled]), ' +
-              'select:not([disabled]), textarea:not([disabled]), ' +
-              '[tabindex]:not([tabindex="-1"]), [role="button"]'
-            );
-            var out = [];
-            for (var i = 0; i < els.length; i++) {
-              if (els[i].offsetParent !== null) out.push(els[i]); // 仅可见元素
-            }
-            return out;
-          }
-          function ensureFocus() {
-            var items = list();
-            if (!items.length) return;
-            var a = document.activeElement;
-            if (!a || a === document.body || a === document.documentElement ||
-                items.indexOf(a) === -1) {
-              items[0].focus();
-            }
-          }
-          document.addEventListener('keydown', function (e) {
-            var ae = document.activeElement;
-            var editable = ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' ||
-                                 ae.isContentEditable);
-            if (editable) return; // 输入框内不拦截方向键
-            var items = list();
-            if (!items.length) return;
-            var idx = items.indexOf(document.activeElement);
-            var handled = true;
-            if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
-              idx = (idx < 0 ? 0 : idx + 1) % items.length;
-              items[idx].focus();
-            } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
-              idx = (idx < 0 ? items.length - 1 : idx - 1 + items.length) % items.length;
-              items[idx].focus();
-            } else if (e.key === 'Enter') {
-              if (idx >= 0) { e.preventDefault(); items[idx].click(); }
-              handled = false; // Enter 不在此阻止（避免与聚焦元素原生点击重复）
-            } else {
-              handled = false;
-            }
-            if (handled) e.preventDefault();
-          }, true);
-          window.__srctvEnsureFocus = ensureFocus;
-          document.addEventListener('DOMContentLoaded', function () { setTimeout(ensureFocus, 300); });
-          window.addEventListener('load', function () { setTimeout(ensureFocus, 300); });
-          setTimeout(ensureFocus, 500);
-        })();
-        """
-
-        webView.evaluateJavascript(js, null)
-    }
-
     override fun onPause() {
         webView.onPause()
         // 强制把 Cookie 落盘，确保登录态在 App 被杀后依然保留（避免反复输密码）
@@ -364,20 +366,143 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        speechRecognizer?.destroy()
+        speechRecognizer = null
         webView.destroy()
         super.onDestroy()
+    }
+
+    // ───────────────────────────── 语音输入（TV 搜索） ─────────────────────────────
+    // 仅由 Web 端 TV 键盘的麦克风按钮通过 SrctvBridge 调用；手机版不会触发，
+    // 但桥方法对两个 flavor 都注册（无害）。识别出的文字经 WebView evaluateJavascript
+    // 派发为 CustomEvent，网页侧（src/lib/tv-voice.ts）订阅即可注入搜索框。
+
+    /** 设备/壳是否支持语音识别（系统无识别服务时返回 false） */
+    private fun isVoiceAvailable(): Boolean = SpeechRecognizer.isRecognitionAvailable(this)
+
+    /** 发起一次语音识别；返回是否已发起（权限缺失则先弹授权，授权后自动开始） */
+    private fun startVoiceInput(): Boolean {
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            dispatchVoiceStatus("unavailable")
+            return false
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            // 记住「授权后自动开始」，并弹出系统授权框
+            pendingVoiceStart = true
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.RECORD_AUDIO),
+                REQUEST_RECORD_AUDIO
+            )
+            return true
+        }
+        startRecognition()
+        return true
+    }
+
+    private fun ensureSpeechRecognizer() {
+        if (speechRecognizer == null && SpeechRecognizer.isRecognitionAvailable(this)) {
+            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
+                setRecognitionListener(recognitionListener)
+            }
+        }
+    }
+
+    private fun startRecognition() {
+        ensureSpeechRecognizer()
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            // 跟随系统语言（中文环境即识别中文），无需硬编码
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toString())
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        }
+        try {
+            speechRecognizer?.startListening(intent)
+        } catch (e: Exception) {
+            dispatchVoiceStatus("error")
+        }
+    }
+
+    /** 识别监听器：结果 / 错误统一回传网页 */
+    private val recognitionListener = object : RecognitionListener {
+        override fun onReadyForSpeech(params: Bundle?) {}
+        override fun onBeginningOfSpeech() {}
+        override fun onRmsChanged(rmsdB: Float) {}
+        override fun onBufferReceived(buffer: ByteArray?) {}
+        override fun onEndOfSpeech() {}
+        override fun onError(error: Int) {
+            val status = when (error) {
+                SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "no-speech"
+                else -> "error"
+            }
+            dispatchVoiceStatus(status)
+        }
+
+        override fun onResults(results: Bundle?) {
+            val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+            val text = matches?.firstOrNull()
+            if (!text.isNullOrBlank()) dispatchVoiceResult(text) else dispatchVoiceStatus("no-speech")
+        }
+
+        override fun onPartialResults(partialResults: Bundle?) {}
+        override fun onEvent(eventType: Int, params: Bundle?) {}
+    }
+
+    /** 把识别文字派发到网页（转义单引号 / 反斜杠 / 换行，避免注入脚本语法错误） */
+    private fun dispatchVoiceResult(text: String) {
+        if (!::webView.isInitialized || isFinishing) return
+        val safe = text.replace("\\", "\\\\").replace("'", "\\'").replace("\n", " ")
+        webView.evaluateJavascript(
+            "window.dispatchEvent(new CustomEvent('srctv-voice-result',{detail:'$safe'}));",
+            null
+        )
+    }
+
+    /** 把语音状态（不可用 / 权限被拒 / 出错 / 无语音）派发到网页，供 UI 提示 */
+    private fun dispatchVoiceStatus(status: String) {
+        if (!::webView.isInitialized || isFinishing) return
+        webView.evaluateJavascript(
+            "window.dispatchEvent(new CustomEvent('srctv-voice-status',{detail:'$status'}));",
+            null
+        )
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_RECORD_AUDIO) {
+            if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+                if (pendingVoiceStart) {
+                    pendingVoiceStart = false
+                    startRecognition()
+                }
+            } else {
+                pendingVoiceStart = false
+                dispatchVoiceStatus("permission-denied")
+            }
+        }
     }
 }
 
 /**
  * JS 桥：被页面内的 SrctvBridge.* 调用。
  * - getPassword / savePassword：登录密码（默认来自编译期 APP_PASSWORD，手输后存 SharedPreferences 优先）；
- * - getSourceListContent：返回 APK 内置的默认源列表文本。
+ * - getSourceListContent：返回 APK 内置的默认源列表文本；
+ * - isVoiceAvailable / startVoiceInput：语音输入（委托给 MainActivity 的 SpeechRecognizer 实现）。
  */
 private class SrcTvBridge(
     private val appContext: Context,
     private val defaultPassword: String,
-    private val assetName: String
+    private val assetName: String,
+    private val isVoiceAvailableFn: () -> Boolean,
+    private val startVoiceInputFn: () -> Boolean,
+    private val toggleImmersiveFn: () -> Unit
 ) {
     private val prefs: SharedPreferences =
         appContext.getSharedPreferences("srctv", Context.MODE_PRIVATE)
@@ -402,4 +527,14 @@ private class SrcTvBridge(
             ""
         }
     }
+
+    @JavascriptInterface
+    fun isVoiceAvailable(): Boolean = isVoiceAvailableFn()
+
+    @JavascriptInterface
+    fun startVoiceInput(): Boolean = startVoiceInputFn()
+
+    /** 切换沉浸式（隐藏/显示系统栏）：TV 网页全屏降级（tv-web-fs）时配合调用 */
+    @JavascriptInterface
+    fun toggleImmersive() = toggleImmersiveFn()
 }

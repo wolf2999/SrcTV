@@ -241,13 +241,16 @@ export async function applyEnvPresets(
     await autoRefreshSubscriptions();
   }
   // 部署者通过 DEFAULT_RECOMMEND_SOURCE 指定的推荐数据源默认值：
-  // 仅对未主动选择过的用户生效（仍为出厂默认 hot-list 且无「已选择」标记），
+  // 仅对未主动选择过的用户生效（仍为出厂默认 douban 且无「已选择」标记），
   // 已有偏好的用户——包括清缓存前做过选择的——不被覆盖，用户的选择始终优先。
   // 直写 setState 而非 updateSettings：自动预置不算用户主动选择，不打「已选择」标记；
-  // 应用后当前值 ≠ hot-list，AuthProvider 的幂等重入天然跳过。
+  // 应用后当前值 ≠ douban，AuthProvider 的幂等重入天然跳过。
+  // 注意：出厂默认值 2026-11-04 从 hot-list 改为 douban，哨兵随之更新；
+  // 更早版本持久化过 hot-list（旧出厂默认、touched=false）的用户被视为「已有偏好」，
+  // 不被部署者默认值覆盖——保持既有展示，避免静默改变老用户看到的首页。
   if (status.defaultRecommendSource) {
     const s = useAppStore.getState();
-    if (!s.recommendSourceTouched && s.recommendSource === 'hot-list') {
+    if (!s.recommendSourceTouched && s.recommendSource === 'douban') {
       useAppStore.setState({ recommendSource: status.defaultRecommendSource });
     }
   }

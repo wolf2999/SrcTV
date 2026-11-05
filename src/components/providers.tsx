@@ -9,7 +9,9 @@ import { GlobalDownloadManager } from './download-manager';
 import { I18nProvider } from '@/lib/i18n';
 import { useAppStore, hydrateLiveProbeResults } from '@/lib/store';
 import { api, STATUS_QUERY_KEY } from '@/lib/client-api';
-import { applyEnvPresets } from '@/lib/subscription-sync';
+import { applyEnvPresets, importSourceListContent } from '@/lib/subscription-sync';
+import { useAuth } from './auth';
+import { TvModeRoot } from './tv/TvModeRoot';
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(
@@ -44,15 +46,49 @@ export function Providers({ children }: { children: ReactNode }) {
       .catch(() => {});
   }, [queryClient]);
 
-  // 首屏自动导入随站打包的 LibreTV-SourceList.json：仅当用户尚未配置任何点播/预置源、
-  // 且已登录（/api/source-list 需要鉴权）时触发一次。复用 importSourceListContent，
-  // 走与「设置里手动文件导入」完全相同的服务端解析 + SSRF 校验管线，失败静默忽略。
-  // 这样 Web 与 APK 首次登录后开箱即带默认点播/直播源，无需手动导入。
+  return (
+    <QueryClientProvider client={queryClient}>
+      {/* TV 模式根开关：判定命中后挂 .tv-mode class + 安装焦点引擎；网页模式零影响 */}
+      <TvModeRoot />
+      {/* i18n Provider 用同步 localStorage 初始化 locale（独立于 zustand），
+          保证首帧即拿到正确语言，无闪烁 */}
+      <I18nProvider>
+        <ThemeProvider>
+          <ToastProvider>
+            {/* 全站常驻：下载事件监听（enqueueDownload）依赖它存在——
+                挂在 Header 里会让 /watch 等不渲染 Header 的页面派发的事件凭空丢失 */}
+            <GlobalDownloadManager />
+            <AuthProvider>
+              {/* 随站源自动导入依赖登录态（verified 在 AuthContext 里），
+                  必须放在 AuthProvider 内部才能用 useAuth 读取 */}
+              <BundledSourceImport />
+              {children}
+            </AuthProvider>
+          </ToastProvider>
+        </ThemeProvider>
+      </I18nProvider>
+    </QueryClientProvider>
+  );
+}
+
+/**
+ * 首屏自动导入随站打包的 LibreTV-SourceList.json：仅当用户尚未配置任何点播/预置源、
+ * 且已登录（/api/source-list 需要鉴权）时触发一次。复用 importSourceListContent，
+ * 走与「设置里手动文件导入」完全相同的服务端解析 + SSRF 校验管线，失败静默忽略。
+ * 这样 Web 与 APK 首次登录后开箱即带默认点播/直播源，无需手动导入。
+ *
+ * （从 Providers 主体内抽出：verified 登录态在 AuthContext 中，本组件位于
+ * AuthProvider 内部，能直接 useAuth 订阅；原实现误从 AppState 读 verified 且
+ * 漏 import importSourceListContent，属于存量 TS 错误，此处一并修正。）
+ */
+function BundledSourceImport() {
+  const { verified } = useAuth();
   useEffect(() => {
+    if (!verified) return; // 未登录时 /api/source-list 必 401，不打无效请求
     let importing = false;
     const FLAG = 'lt_bundled_source_imported';
     const unsub = useAppStore.subscribe((s) => {
-      if (importing || !s.verified) return;
+      if (importing) return;
       const hasSources = s.customAPIs.length > 0 || s.envSources.length > 0;
       if (hasSources || localStorage.getItem(FLAG)) return;
       importing = true;
@@ -66,22 +102,6 @@ export function Providers({ children }: { children: ReactNode }) {
         });
     });
     return unsub;
-  }, []);
-
-  return (
-    <QueryClientProvider client={queryClient}>
-      {/* i18n Provider 用同步 localStorage 初始化 locale（独立于 zustand），
-          保证首帧即拿到正确语言，无闪烁 */}
-      <I18nProvider>
-        <ThemeProvider>
-          <ToastProvider>
-            {/* 全站常驻：下载事件监听（enqueueDownload）依赖它存在——
-                挂在 Header 里会让 /watch 等不渲染 Header 的页面派发的事件凭空丢失 */}
-            <GlobalDownloadManager />
-            <AuthProvider>{children}</AuthProvider>
-          </ToastProvider>
-        </ThemeProvider>
-      </I18nProvider>
-    </QueryClientProvider>
-  );
+  }, [verified]);
+  return null;
 }

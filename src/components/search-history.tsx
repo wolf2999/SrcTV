@@ -33,7 +33,13 @@ export function useSearchHistory(input: string) {
   }, [history.data, input]);
 
   // 唯一命中项与输入内容完全一致时不展开：否则会盖住用户刚敲进去的内容
-  const visible = open && matches.length > 0 && !(matches.length === 1 && matches[0].text === input.trim());
+  // visible 依赖 matches（react-query 异步数据）， hydration 前客户端首帧与 SSR 的
+  // 判定可能不一致（TV WebView 恢复焦点等场景），导致该值派生的 className/aria/
+  // 下拉子树触发 React hydration mismatch（dev overlay 报 page.tsx 269 按钮类名不一致）。
+  // 挂载门：首帧一律 false，与 SSR 渲染结果严格一致，挂载后再按真实状态展开。
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const visible = mounted && open && matches.length > 0 && !(matches.length === 1 && matches[0].text === input.trim());
 
   // 点按下拉之外的任意位置收起
   useEffect(() => {

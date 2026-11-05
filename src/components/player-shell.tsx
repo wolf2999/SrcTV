@@ -50,8 +50,12 @@ export interface PlayerSkipApi {
   seek(seconds: number): void;
   /** 暂停播放：记录标记前先定格，避免点击到读取之间视频继续走 */
   pause(): void;
+  /** 继续播放（暂停态恢复；播放态无操作）。TV 播放控制层用它实现「播放/暂停」切换 */
+  play(): void;
   /** 当前是否处于暂停状态 */
   isPaused(): boolean;
+  /** 切换全屏（FR-7.2：遥控器可达的全屏按钮调用，与桌面 'f' 键走同一 ArtPlayer 全屏路径） */
+  toggleFullscreen(): void;
 }
 
 interface PlayerShellProps {
@@ -617,8 +621,73 @@ export function PlayerShell({
           /* 忽略 */
         }
       },
+      play: () => {
+        try {
+          artRef.current?.play();
+        } catch {
+          /* 忽略 */
+        }
+      },
       isPaused: () => artRef.current?.video?.paused ?? true,
+      // FR-7.2：全屏切换（M4-3 真机联调定稿）。Android WebView 对容器 div 的
+      // Element Fullscreen API 静默拒绝（onShowCustomView 不触发），且 ArtPlayer 的
+      // fullscreen setter 被拒后内部状态仍乐观置位——「先试原生再读回」会误判跳过降级。
+      // 故按环境分流（不再读回）：
+      // - 有 SrctvBridge（Android 壳/TV）：直接 ArtPlayer fullscreenWeb（CSS 网页全屏，
+      //   纯样式操作无 gesture 限制）+ documentElement 加 tv-web-fs 类 + 壳切沉浸式
+      //   （隐藏系统栏）；TV 控制层由 tv.css 的 html.tv-web-fs 规则提升为 fixed 覆盖，
+      //   全屏态遥控器仍可操作控制条（再按全屏即退出）。
+      // - 无 bridge（桌面浏览器/调试）：原生 fullscreen（与 'f' 键一致）。
+      // 退出时把已激活的全屏态全部还原，保证任何路径进入都能退出。
+      toggleFullscreen: () => {
+        try {
+          const current = artRef.current;
+          if (!current) return;
+          const doc = document.documentElement;
+          const bridge = (window as unknown as { SrctvBridge?: { toggleImmersive?: () => void } }).SrctvBridge;
+          const inWebFs = doc.classList.contains('tv-web-fs') || !!current.fullscreenWeb;
+          const inNativeFs = !!current.fullscreen;
+          // 任一全屏态激活中 → 全部退出
+          if (inWebFs || inNativeFs) {
+            try { if (inNativeFs) current.fullscreen = false; } catch { /* 忽略 */ }
+            try { if (current.fullscreenWeb) current.fullscreenWeb = false; } catch { /* 忽略 */ }
+            doc.classList.remove('tv-web-fs');
+            try { bridge?.toggleImmersive?.(); } catch { /* 忽略 */ }
+            return;
+          }
+          if (bridge) {
+            // Android 壳（TV WebView）：CSS 网页全屏 + 壳沉浸式
+            current.fullscreenWeb = true;
+            doc.classList.add('tv-web-fs');
+            try { bridge.toggleImmersive?.(); } catch { /* 忽略 */ }
+          } else {
+            // 桌面浏览器：原生全屏（与 'f' 键一致）
+            try { current.fullscreen = true; } catch { /* 忽略 */ }
+          }
+        } catch { /* 忽略 */ }
+      },
     });
+
+    // TV 返回键全屏态优先退全屏（2026-11-05）：tv-focus.ts 的 closeTopModal 在
+    // html.tv-web-fs 时派发该事件而非直接退出控制模式/路由后退——否则第一次返回
+    // 只是隐形退出控制模式（用户看不出来），第二次返回带着 tv-web-fs 类路由后退后，
+    // 全屏 CSS（隐藏页面内容）泄漏到目标页 → 黑屏。这里只做「退出」分支（含原生
+    // 全屏、CSS 类、壳沉浸式三态还原），与 toggleFullscreen 退出路径一致。
+    const exitAllFullscreen = () => {
+      try {
+        const current = artRef.current;
+        if (!current) return;
+        const doc = document.documentElement;
+        const bridge = (window as unknown as { SrctvBridge?: { toggleImmersive?: () => void } }).SrctvBridge;
+        if (doc.classList.contains('tv-web-fs') || current.fullscreenWeb || current.fullscreen) {
+          try { if (current.fullscreen) current.fullscreen = false; } catch { /* 忽略 */ }
+          try { if (current.fullscreenWeb) current.fullscreenWeb = false; } catch { /* 忽略 */ }
+          doc.classList.remove('tv-web-fs');
+          try { bridge?.toggleImmersive?.(); } catch { /* 忽略 */ }
+        }
+      } catch { /* 忽略 */ }
+    };
+    window.addEventListener('srctv:toggle-fullscreen', exitAllFullscreen);
 
     /**
      * 读解码后的真实分辨率。
@@ -915,6 +984,8 @@ export function PlayerShell({
       }
       document.removeEventListener('keydown', shortcuts);
       document.removeEventListener('visibilitychange', saveOnHide);
+      // 移除 TV 返回键退全屏监听（与上方 addEventListener 成对）
+      window.removeEventListener('srctv:toggle-fullscreen', exitAllFullscreen);
       if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
       if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
       el?.removeEventListener('touchstart', onTouchStart);

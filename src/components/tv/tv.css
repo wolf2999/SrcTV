@@ -1,0 +1,196 @@
+/*
+ * TV 模式专属样式（M1-5）：全部挂在根节点 .tv-mode 作用域下（由 TvModeRoot 挂到
+ * <html>），与网页端样式物理隔离——网页模式不含 .tv-mode，这些规则完全不生效；
+ * 反之 TV 模式下也只追加视觉层，不改业务组件的布局类。
+ *
+ * 焦点可视态：TV 上没有鼠标 hover，焦点即「指针」。统一用 .tv-focused
+ * （由 tv-focus.ts 引擎在 focusin/focusout 时维护）做高亮描边 + 轻微放大，
+ * 比 :focus-visible 可靠（程序化 focus() 不保证触发 :focus-visible）。
+ */
+
+/* 网页默认的浏览器焦点描边在 TV 上观感差且不统一：TV 模式下统一收口到 .tv-focused */
+.tv-mode *:focus {
+  outline: none;
+}
+
+/* 核心焦点态：高亮描边 + 放大 + 投影，确保 3 米外可辨识（10-foot UI 基本要求） */
+.tv-mode .tv-focused {
+  outline: 3px solid #22c55e;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.18);
+  transform: scale(1.06);
+  transition:
+    transform 120ms ease-out,
+    box-shadow 120ms ease-out;
+  z-index: 5;
+  position: relative; /* 让 z-index 生效，避免被相邻卡片盖住描边 */
+  border-radius: inherit;
+}
+
+/* 输入框焦点不放大（放大导致文字模糊与光标错位），只描边 */
+.tv-mode input.tv-focused,
+.tv-mode textarea.tv-focused,
+.tv-mode select.tv-focused {
+  transform: none;
+}
+
+/* TV 模式全局放大基础字号（10-foot UI：电视上 14px 不可读） */
+.tv-mode {
+  font-size: 18px;
+}
+
+/* 滚动条在 TV 上无鼠标拖拽场景，隐藏以免分散注意力（方向键导航自带 scrollIntoView） */
+.tv-mode ::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/*
+ * TV 模式下屏蔽不适配遥控器/远距离观看的功能入口（2026-11-04 需求）：
+ * 业务组件只挂惰性 data-tv-hide 标记，是否显示完全由本文件决定（§3.1 样式层隔离，
+ * 业务组件零逻辑分支）。当前隐藏：
+ * - download：下载管理。依赖鼠标/长按的交互，遥控器用不上；
+ * - settings：设置。表单密集型界面不适合 TV 操作（未来 TV 专属设置页落地后再放开）。
+ * display:none 元素天然不参与焦点引擎候选（tv-focus 的可见性过滤会排除）。
+ */
+.tv-mode [data-tv-hide] {
+  display: none !important;
+}
+
+/*
+ * TV 播放控制层（M3 / FR-7）：watch 页面叠加在播放器上的透明焦点锚点，承载遥控
+ * 方向键控制（seek/换集/播放暂停）。网页模式完全不显示、不接收焦点（与业务零耦合）。
+ * - 基础规则：默认 display:none，网页端零影响（DOM 里多一个隐藏节点无害）；
+ * - .tv-mode 下才显示并覆盖播放器，作为方向键接收锚点。
+ * 控制层仅拦截键盘事件（透明、pointer-events:none 不挡鼠标点播放器），
+ * 用键盘事件处理播放控制，不依赖鼠标拖拽（遥控器无鼠标）。
+ */
+.tv-player-control-layer {
+  display: none;
+}
+.tv-mode .tv-player-control-layer {
+  display: block;
+  position: absolute;
+  inset: 0;
+  outline: none;
+  /* 仅做键盘锚点，不拦截鼠标（网页端用户仍可点播放器/跳过提示） */
+  pointer-events: none;
+  border: 0;
+  transition: border-color 150ms ease-out;
+}
+/* M5 收尾：Esc 退出控制模式时钩子给层加 hidden 属性，但上面的 display:block 会覆盖
+   [hidden] 的 UA display:none（特异性更高），导致控制条视觉上不消失、退出无效。
+   此规则让 hidden 真正隐藏控制层（特异性 0,3,0 > 上面的 0,2,0），与「退出控制模式」
+   的返回键修复配套——否则返回键退出后控制条仍在屏幕上，体验割裂。 */
+.tv-mode .tv-player-control-layer[hidden] {
+  display: none;
+}
+/* 控制层自身持焦时（引擎会给 activeElement 加 .tv-focused）的弱提示：
+   不放大（inset:0 放大无意义）、不描边，仅淡淡一圈绿边说明处于播放控制态。
+   真正的焦点高亮作用在内部可见按钮上（见 .tv-player-btn.tv-focused）。 */
+.tv-mode .tv-focused.tv-player-control-layer {
+  outline: none;
+  transform: none;
+  border: 2px solid rgba(34, 197, 94, 0.35);
+}
+
+/* FR-7.2 可见播放控制条（底部居中工具条）：满足「播放控制条焦点可见」，
+   含全屏切换按钮让遥控器可达全屏。 */
+.tv-mode .tv-player-control-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 7%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.62);
+  pointer-events: auto; /* 子层重新开启鼠标（桌面 TV 调试可点；TV 无鼠标不影响） */
+}
+.tv-mode .tv-player-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 66px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #e5e7eb;
+  cursor: pointer;
+  font: inherit;
+}
+.tv-mode .tv-player-btn-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+.tv-mode .tv-player-btn-label {
+  font-size: 13px;
+  opacity: 0.85;
+}
+/* 当前高亮按钮复用全局 .tv-focused（绿描边 + 轻微放大 + 投影），保证 10-foot UI 焦点清晰可见 */
+
+/* M4-3 真机联调：Android WebView 拒绝容器 div 的 Element Fullscreen，toggleFullscreen
+   降级为「ArtPlayer fullscreenWeb（视频 fixed 铺满）+ 壳沉浸式」。此时把 TV 控制层
+   同步提升为 fixed 覆盖全屏（透明背景让视频透出），保证全屏态遥控器仍可操作控制条
+   （再次按全屏按钮即退出）。z-index 高于 ArtPlayer fullscreenWeb 容器的 9999。 */
+html.tv-web-fs .tv-player-control-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: transparent;
+}
+html.tv-web-fs .tv-player-control-bar {
+  bottom: 6%;
+}
+/* M5 收尾：全屏态下控制层提升为 fixed 铺满整屏，上面的 2px 绿边会绕整个电视屏幕一圈
+   成为视觉噪点。全屏时真正的焦点提示是底部控制条里的高亮按钮
+   （.tv-player-btn.tv-focused），故在此去掉整层描边，仅保留按钮级焦点高亮。
+   非全屏态控制层只覆盖播放器区域，那圈绿边仍是「处于播放控制态」的有益提示，不动。 */
+html.tv-web-fs .tv-focused.tv-player-control-layer {
+  border: 0;
+}
+
+/* 播放控制操作提示（快进/快退/换集/播放暂停/全屏），模仿播放器自身 hint，位置在播放器顶部居中，
+   避免与底部控制条重叠 */
+.tv-player-hint {
+  position: absolute;
+  left: 50%;
+  top: 12%;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 20px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* 退出播放控制模式后的「重新进入」悬浮入口（2026-11-05）：此前按 Esc/返回退出后
+   控制层 hidden 且 tabIndex=-1 不参与焦点导航，遥控器无任何途径回到控制条。
+   该按钮在退出态渲染于播放器右上角，真实焦点 + data-tv-focusable 供焦点引擎导航，
+   确认即恢复控制模式。仅 .tv-mode 下显示（web 端不渲染该按钮，由 isTvMode 控制）。 */
+.tv-mode .tv-player-reenter {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 10001; /* 全屏态控制层 z-index=10000，重入口需在其上（fixed 覆盖时随父级） */
+  padding: 6px 14px;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  pointer-events: auto;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+}
+html.tv-mode.tv-web-fs .tv-player-reenter {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+}

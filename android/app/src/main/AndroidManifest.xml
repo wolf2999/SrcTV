@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- TV 语音输入（搜索）：仅 TV 壳用到；设备无麦时 isRecognitionAvailable 返回 false，不会崩溃 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- 麦克风硬件可选（部分 TV/盒子无麦），不强制要求 -->
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <application
         android:allowBackup="true"
