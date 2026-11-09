@@ -87,21 +87,41 @@ function BundledSourceImport() {
     if (!verified) return; // 未登录时 /api/source-list 必 401，不打无效请求
     let importing = false;
     const FLAG = 'lt_bundled_source_imported';
-    const unsub = useAppStore.subscribe((s) => {
+    const tryImport = () => {
       if (importing) return;
+      // 实时读 getState 而非快照：首屏 applyEnvPresets 可能刚写入 envSources
+      const s = useAppStore.getState();
       const hasSources = s.customAPIs.length > 0 || s.envSources.length > 0;
       if (hasSources || localStorage.getItem(FLAG)) return;
       importing = true;
       fetch('/LibreTV-SourceList.json')
         .then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`))))
-        .then((text) => importSourceListContent(text))
-        .then(() => localStorage.setItem(FLAG, '1'))
-        .catch(() => {
+        .then((text) => {
+          // 网络等待期间部署者预置源（applyEnvPresets）可能已就位——
+          // 那种情况下用户本就有源，不再重复导入随站文件
+          const cur = useAppStore.getState();
+          if (cur.customAPIs.length > 0 || cur.envSources.length > 0) return null;
+          return importSourceListContent(text);
+        })
+        .then((r) => {
+          if (r) localStorage.setItem(FLAG, '1');
+        })
+        .catch((err) => {
           // 失败不写标记，下次满足条件再试；复位 importing 避免永久卡死
+          console.warn('[LibreTV] 随站源自动导入失败（下次满足条件将重试）：', err instanceof Error ? err.message : err);
           importing = false;
         });
-    });
-    return unsub;
+    };
+    // 关键修复：不能只靠 store 订阅触发。订阅只对「注册之后」的状态变更生效，
+    // 而首屏 applyEnvPresets 的写入几乎总是发生在本 effect（等 verified 翻转）之前；
+    // 全新会话/无痕模式下 store 是空的、之后可能再无任何变更，订阅回调永远不触发
+    // （此前线上无痕访问必现「不自动导入」就是这个原因）。注册订阅后立即主动检查一次。
+    const timer = setTimeout(tryImport, 0);
+    const unsub = useAppStore.subscribe(() => tryImport());
+    return () => {
+      clearTimeout(timer);
+      unsub();
+    };
   }, [verified]);
   return null;
 }
