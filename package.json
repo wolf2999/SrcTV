@@ -48,7 +48,7 @@
   },
   "build": {
     "appId": "tv.libretv.app",
-    "productName": "LibreTV",
+    "productName": "SrcTV",
     "directories": {
       "output": "release"
     },
@@ -70,10 +70,10 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "artifactName": "LibreTV-Setup-${version}.${ext}"
+      "artifactName": "SrcTV-Setup-${version}.${ext}"
     },
     "portable": {
-      "artifactName": "LibreTV-Portable-${version}.${ext}"
+      "artifactName": "SrcTV-Portable-${version}.${ext}"
     }
   }
 }
