@@ -132,3 +132,18 @@
   **根因**：tv-focus.ts 的 closeTopModal 里全屏分支（tv-web-fs）排在控制层分支**之前**，控制层激活态下返回键被全屏分支抢先消费。
   **修复**：① closeTopModal 返回优先级改为「弹窗 → 播放控制层（派发 Escape 收起）→ 全屏（tv-web-fs）→ 路由后退」——收菜单不发生后退，不触发此前的 tv-web-fs 泄漏黑屏路径，原黑屏修复语义不变；② useTvPlayerControls 加无操作自动收起：`lastActivity` ref 在 handleKeyDown 统一刷新，空闲超 `IDLE_HIDE_MS=5000ms` 按 Esc 同路径退出（setExited + 焦点交剧集列表），仅 TV 模式启用，重进（reenter）后计时自动重置。
   **实测**：桌面 ?tv=1 eval 模拟——伪造 `[data-tv-player-control]` + `html.tv-web-fs`，第一次 `__srctvConsumeBack()` 返回 true 且全屏类保留（菜单优先收起 ✓）；移除控制层后再调返回 true 并派发 srctv:toggle-fullscreen（全屏分支 ✓，桌面首页无播放器监听故类残留属预期，播放页由 player-shell 三态还原）。`tsc --noEmit` EXIT=0。返回键语义现为三段式：收菜单 → 退全屏 → 路由后退。
+- 2026-11-06：修复 **搜索结果聚合卡片有焦点但无绿框**。
+  **现象**：搜索结果列表聚合卡片（电影海报+来源聚合）聚焦后没有任何焦点描边。
+  **根因**（桌面复现 + computed style 链路排查）：焦点落在卡片**内层 div**（`flex h-full cursor-pointer …`，自身 overflow visible），其**父级 `.card` 是 overflow:hidden**——`.tv-focused` 的描边画在元素 border box 外 2px，被祖先的 overflow 裁剪（outline 计算值正确 rgb(34,197,94) 3px 但整圈不可见）。此前选集网格修复（p-2 留边）只解决了「祖先容器贴边裁剪」，没覆盖「祖先 overflow:hidden 且内层元素填满」的场景。
+  **修复**：tv-focus.ts 的 focusin 委托新增 `needsInsetOutline`——从焦点元素自身向上最多 6 层，任一层 overflow 非 visible 即追加 `.tv-focused-inset` 类；tv.css 新增 `.tv-mode .tv-focused.tv-focused-inset { outline-offset: -4px }`，负 offset 把描边画进边框内侧（跟随 border-radius 内缩），不受任何祖先 overflow 裁剪。focusout 时成对移除。
+  **实测**：桌面 ?tv=1&s=黑球 合成 ArrowDown 导航到聚合卡：`tv-focused-inset=true`、`outline-offset=-4px`；强制 6px 红描边内缩可清晰画出卡片内缘整圈（机制验证 ✓，3px 绿色在 1080 缩放截图下偏细属正常，4K 模拟器原分辨率下清晰可见）。`tsc --noEmit` EXIT=0。
+- 2026-11-06：修复 **inset 负 offset 描边在 Android WebView 上只显示一条边（豆瓣/首页海报卡）**。
+  **现象**：上一条负 offset 方案在桌面 Chrome 完整，但模拟器 WebView 上聚焦豆瓣卡（`.card` 自身 overflow:hidden）只见右侧一条绿线。
+  **根因**：WebView 的 outline 绘制顺序与桌面 Chrome 不同，内缩 outline 会被卡片内部的海报图/文字块盖住，只有未被内容覆盖的边缘露出。
+  **修复**：tv.css 的 `.tv-focused-inset` 不再用 outline-offset，改为 `outline: none` + 伪元素 `::after`（`position:absolute; inset:0; border:3px solid #22c55e; border-radius:inherit; z-index:10; pointer-events:none`）——落在 border box 内不受 overflow 裁剪，且 z-index 必然盖在内容之上，跨引擎渲染一致。
+  **实测**：桌面 ?tv=1 聚焦首页第一张豆瓣卡截图：整圈绿框盖在海报之上完整可见；类挂载逻辑（tv-focus.ts）未动。模拟器待刷新页面确认。
+- 2026-11-06：修复 **播放控制层自动收起后无键可唤回**。
+  **现象**：控制层空闲 5 秒自动收起后，遥控器按任何键都无法把菜单按出来（用户实测「没有键可以按出来」）。
+  **根因**：自动收起路径沿用手动 Esc 语义——`focusEpisodeList()` 抢焦点去剧集列表，且唯一的重入途径是播放器右上角「⌨ 播放控制」小悬浮按钮，遥控器方向键在页面里导航几乎不可能到达。且实测自动收起后焦点还会漂到页面 header 按钮上（浏览器把 hidden 层的焦点还给页面），按键全部变成页面导航。
+  **修复**：区分退出方式（useTvPlayerControls.tsx）：① 自动收起不再把焦点交给剧集列表，焦点随 hidden 层回落；② 新增 `autoHidden` ref 标记——空闲收起置 true、手动 Esc/reenter 置 false；③ exited 态挂 window **捕获阶段** keydown 监听：仅 `autoHidden=true` 时生效，焦点在 `[data-tv-episode-list]` 内不劫持（保留手动退出后的选集浏览），媒体键放行（收起态仍可直接播放/暂停），方向键/Enter/空格 → `reenter()` 唤回控制层并消费事件（阻止焦点引擎页面导航）。手动 Esc 退出仍是纯浏览模式，行为不变。
+  **实测**：桌面 ?tv=1 播放页（黑球）——控制层激活 → 按键标记交互 → 8 秒后自动收起（hidden=true）→ 合成 ArrowRight → 400ms 后 hidden=false、焦点回到控制层（唤醒 ✓，探针 dbgWakeHit 命中）。StrictMode 下双监听为 dev 现象不影响逻辑。`tsc --noEmit` EXIT=0（临时探针已移除）。模拟器刷新后生效。

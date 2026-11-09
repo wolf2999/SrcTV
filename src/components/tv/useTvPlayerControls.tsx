@@ -60,6 +60,10 @@ export function useTvPlayerControls(opts: {
   const userInteracted = useRef(false);
   // 最近一次按键时间戳：驱动「长时间不操作自动收起控制层」（TV 观影场景菜单常驻挡画面）
   const lastActivity = useRef(Date.now());
+  // 退出方式标记：true = 空闲自动收起（唤醒监听生效）；false = 手动 Esc 退出（纯浏览模式）
+  // 手动退出后用户意图是浏览页面，按键不应被劫持；自动收起只是「不想挡画面」，
+  // TV 通用约定是按任意方向键/OK 唤回菜单。
+  const autoHidden = useRef(false);
   useEffect(() => {
     if (!isTvMode()) return;
     const id = setInterval(() => {
@@ -80,10 +84,43 @@ export function useTvPlayerControls(opts: {
     lastActivity.current = Date.now();
     const id = setInterval(() => {
       if (Date.now() - lastActivity.current < IDLE_HIDE_MS) return;
+      autoHidden.current = true;
       setExited(true);
-      requestAnimationFrame(focusEpisodeList);
+      // 注意：自动收起【不】把焦点交给剧集列表（那是手动 Esc 退出的语义）。
+      // 收起后由下方 exited 态的按键监听负责唤醒。
     }, 1000);
     return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exited]);
+
+  // 自动收起后的「唤醒」监听（2026-11-06）：此前收起后唯一重入途径是播放器右上角
+  // 的「⌨ 播放控制」悬浮按钮，遥控器方向键在页面里导航几乎不可能到达（实测用户
+  // 「没有键可以按出来」）。TV 通用交互约定：菜单因空闲隐藏后，按任意方向键/OK
+  // 都应把菜单唤回。实现：exited 态挂 window 捕获监听——
+  //  - 焦点在剧集列表内时不拦截（保留手动 Esc 退出后浏览选集的能力）；
+  //  - 媒体键（MediaPlayPause）不拦截，收起态下仍可直接播放/暂停；
+  //  - 其余方向键 / Enter / 空格：恢复控制层并消费事件（阻止焦点引擎做页面导航）。
+  useEffect(() => {
+    if (!isTvMode() || !exited) return;
+    const wake = (e: KeyboardEvent) => {
+      // 仅自动收起场景唤醒；手动 Esc 退出是浏览模式，不劫持任何按键
+      if (!autoHidden.current) return;
+      // 焦点落在剧集列表内时也不劫持（用户已开始选集浏览，尊重当前意图）
+      if (
+        document.activeElement instanceof HTMLElement &&
+        document.activeElement.closest('[data-tv-episode-list]')
+      )
+        return;
+      if (e.key.startsWith('Media')) return; // 媒体键直达播放器语义
+      const wakeKeys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter', ' '];
+      if (!wakeKeys.includes(e.key)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      reenter();
+    };
+    // capture 阶段先于焦点引擎 / 页面处理器，保证唤醒优先
+    window.addEventListener('keydown', wake, true);
+    return () => window.removeEventListener('keydown', wake, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exited]);
 
@@ -187,6 +224,7 @@ export function useTvPlayerControls(opts: {
       case 'Escape':
         e.preventDefault();
         e.stopPropagation();
+        autoHidden.current = false; // 手动退出 = 浏览模式，唤醒监听不生效
         setExited(true);
         // 退出后焦点交给剧集列表，下一帧再 focus（等 React 把 hidden 生效、列表可聚焦）
         requestAnimationFrame(focusEpisodeList);
@@ -201,6 +239,7 @@ export function useTvPlayerControls(opts: {
   // 「怎么按都出不来」。这个悬浮按钮在退出态渲染、可被遥控器方向键导航到
   // （真实焦点 + data-tv-focusable 供引擎收录），按确认即恢复控制模式。
   const reenter = () => {
+    autoHidden.current = false; // 已唤醒，退出唤醒监听语义
     setExited(false);
     // 等 React 把 hidden 摘掉后再聚焦控制层（同 Esc 退出的下一帧策略）
     requestAnimationFrame(() => ref.current?.focus({ preventScroll: true }));

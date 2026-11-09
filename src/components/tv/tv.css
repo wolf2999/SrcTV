@@ -34,6 +34,24 @@
   transform: none;
 }
 
+/* 自身或祖先 overflow:hidden 的元素（如搜索聚合卡片/豆瓣卡片 .card）外扩描边会被
+   裁掉，tv-focus.ts 检测到时追加此类。第一版用负 outline-offset 把描边画进内侧，
+   但 Android WebView 上 outline 会被卡片内部的海报图等内容盖住（painting 顺序差异），
+   只漏出边缘一条（2026-11-06 模拟器实测）。改为画一个绝对定位伪元素描边：inset:0
+   落在 border box 内不受 overflow 裁剪，z-index 抬到内容之上必然可见。 */
+.tv-mode .tv-focused.tv-focused-inset {
+  outline: none;
+}
+.tv-mode .tv-focused.tv-focused-inset::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 3px solid #22c55e;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 10;
+}
+
 /* TV 模式全局放大基础字号（10-foot UI：电视上 14px 不可读） */
 .tv-mode {
   font-size: 18px;

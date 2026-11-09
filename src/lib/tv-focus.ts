@@ -223,14 +223,33 @@ export function installTvFocus(): () => void {
   // window 又会触发本引擎的 keydown 处理；用此标志阻断重入，避免无限递归。
   let backHandling = false;
 
-  // 焦点可视类：focusin/focusout 委托，兼容 React 重渲染
+  // 焦点可视类：focusin/focusout 委托，兼容 React 重渲染。
+  // 注意：描边画在元素 border box 外 2px，若【自身或任一祖先】overflow:hidden
+  // （如搜索聚合卡片：焦点在内层 div，外层 .card 是 overflow:hidden），outline 会被
+  // 裁剪掉，表现为「有焦点但没绿框」（2026-11-06 模拟器/桌面实测复现）。此时追加
+  // .tv-focused-inset，改用负 offset 把描边画进边框内侧，不受任何 overflow 裁剪
+  // （样式见 tv.css）。祖先向上最多查 6 层（卡片结构普遍不超过此深度）。
+  const needsInsetOutline = (el: HTMLElement): boolean => {
+    let e: HTMLElement | null = el;
+    for (let depth = 0; e && e !== document.body && depth < 6; depth++, e = e.parentElement) {
+      const s = getComputedStyle(e);
+      if (s.overflowX !== 'visible' || s.overflowY !== 'visible') return true;
+    }
+    return false;
+  };
   const onFocusIn = (e: FocusEvent) => {
     const t = e.target as HTMLElement;
-    if (t instanceof HTMLElement) t.classList.add('tv-focused');
+    if (t instanceof HTMLElement) {
+      t.classList.add('tv-focused');
+      if (needsInsetOutline(t)) t.classList.add('tv-focused-inset');
+    }
   };
   const onFocusOut = (e: FocusEvent) => {
     const t = e.target as HTMLElement;
-    if (t instanceof HTMLElement) t.classList.remove('tv-focused');
+    if (t instanceof HTMLElement) {
+      t.classList.remove('tv-focused');
+      t.classList.remove('tv-focused-inset');
+    }
   };
   document.addEventListener('focusin', onFocusIn, true);
   document.addEventListener('focusout', onFocusOut, true);
