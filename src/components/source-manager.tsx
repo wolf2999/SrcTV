@@ -1280,7 +1280,7 @@ function summarizeConfig(text: string): string {
   } catch {
     throw new Error('文件不是合法的 JSON');
   }
-  if (cfg.name !== 'LibreTV-Settings') throw new Error('不是 LibreTV 的配置文件');
+  if (cfg.name !== 'LibreTV-Settings') throw new Error('不是有效的配置文件（需为 LibreTV-Settings 格式）');
 
   const parts: string[] = [];
   const settingsRaw = cfg.data?.[PERSIST_KEY];
